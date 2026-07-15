@@ -1,0 +1,332 @@
+"""
+db.py — Gayatri AI v5.0
+SQLite persistence layer (Section 7). Replaces the legacy in-memory
+conversation_history list and manual autosave thread. Three tables:
+sessions, messages, stats (computed on the fly from messages/sources).
+"""
+
+import sqlite3
+import json
+import threading
+from datetime import datetime, timezone
+
+import config
+
+_local = threading.local()
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def get_connection() -> sqlite3.Connection:
+    """One connection per thread (Flet event handlers may run on different threads)."""
+    if not hasattr(_local, "conn"):
+        _local.conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
+        _local.conn.row_factory = sqlite3.Row
+        _local.conn.execute("PRAGMA foreign_keys = ON")
+    return _local.conn
+
+
+def init_db() -> None:
+    """Creates tables if they don't exist. Call once at app startup."""
+    conn = get_connection()
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL DEFAULT 'New Chat',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+            content TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            sources_json TEXT DEFAULT '[]',
+            md_chunks_used_json TEXT DEFAULT '[]',
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS stats (
+            session_id INTEGER PRIMARY KEY,
+            keywords_generated INTEGER NOT NULL DEFAULT 0,
+            searches_performed INTEGER NOT NULL DEFAULT 0,
+            sources_found INTEGER NOT NULL DEFAULT 0,
+            pages_crawled INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS session_context_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            content TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_session_context_files_session_id ON session_context_files(session_id);
+        """
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Sessions
+# ---------------------------------------------------------------------------
+def create_session(title: str = None) -> int:
+    conn = get_connection()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO sessions (title, created_at, updated_at) VALUES (?, ?, ?)",
+        (title or config.DEFAULT_SESSION_TITLE, now, now),
+    )
+    session_id = cur.lastrowid
+    conn.execute(
+        "INSERT INTO stats (session_id, keywords_generated, searches_performed, "
+        "sources_found, pages_crawled) VALUES (?, 0, 0, 0, 0)",
+        (session_id,),
+    )
+    conn.commit()
+    return session_id
+
+
+def get_session(session_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_sessions() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def rename_session(session_id: int, new_title: str) -> None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+        (new_title, _now(), session_id),
+    )
+    conn.commit()
+
+
+def touch_session(session_id: int) -> None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE sessions SET updated_at = ? WHERE id = ?", (_now(), session_id)
+    )
+    conn.commit()
+
+
+def delete_session(session_id: int) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Messages
+# ---------------------------------------------------------------------------
+def add_message(session_id: int, role: str, content: str,
+                 sources: list[dict] = None, md_chunks_used: list[str] = None) -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO messages (session_id, role, content, timestamp, sources_json, "
+        "md_chunks_used_json) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            session_id,
+            role,
+            content,
+            _now(),
+            json.dumps(sources or []),
+            json.dumps(md_chunks_used or []),
+        ),
+    )
+    conn.commit()
+    touch_session(session_id)
+    return cur.lastrowid
+
+
+def get_messages(session_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,)
+    ).fetchall()
+    messages = []
+    for r in rows:
+        m = dict(r)
+        m["sources"] = json.loads(m.pop("sources_json") or "[]")
+        m["md_chunks_used"] = json.loads(m.pop("md_chunks_used_json") or "[]")
+        messages.append(m)
+    return messages
+
+
+def delete_message(message_id: int) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+    conn.commit()
+
+
+def update_message_content(message_id: int, new_content: str) -> None:
+    """Used for edit-and-resend of a previous user message (Section 6.3)."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE messages SET content = ? WHERE id = ?", (new_content, message_id)
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Stats
+# ---------------------------------------------------------------------------
+def get_stats(session_id: int) -> dict:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM stats WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if row:
+        return dict(row)
+    return {
+        "session_id": session_id,
+        "keywords_generated": 0,
+        "searches_performed": 0,
+        "sources_found": 0,
+        "pages_crawled": 0,
+    }
+
+
+def increment_stats(session_id: int, keywords_generated: int = 0, searches_performed: int = 0,
+                     sources_found: int = 0, pages_crawled: int = 0) -> None:
+    conn = get_connection()
+    conn.execute(
+        """
+        UPDATE stats SET
+            keywords_generated = keywords_generated + ?,
+            searches_performed = searches_performed + ?,
+            sources_found = sources_found + ?,
+            pages_crawled = pages_crawled + ?
+        WHERE session_id = ?
+        """,
+        (keywords_generated, searches_performed, sources_found, pages_crawled, session_id),
+    )
+    conn.commit()
+
+
+def reset_stats(session_id: int) -> None:
+    conn = get_connection()
+    conn.execute(
+        """
+        UPDATE stats SET keywords_generated = 0, searches_performed = 0,
+            sources_found = 0, pages_crawled = 0
+        WHERE session_id = ?
+        """,
+        (session_id,),
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Section 5A: Per-session context files (scoped to a single thread only,
+# distinct from the global /workspace Context Center files)
+# ---------------------------------------------------------------------------
+MAX_SESSION_FILE_BYTES = 200_000  # ~200KB, per Section 5A.2 upload guard
+SOFT_FILE_COUNT_WARNING = 10       # per Section 5A.2, non-blocking nudge
+
+
+class SessionFileTooLargeError(Exception):
+    """Raised when an uploaded per-session .md file exceeds MAX_SESSION_FILE_BYTES."""
+    pass
+
+
+def add_session_context_file(session_id: int, filename: str, content: str) -> int:
+    """Adds a .md file scoped to a single session. Content is stored directly
+    in the DB (not on disk) so it's automatically cleaned up via ON DELETE
+    CASCADE when the session is deleted. Raises SessionFileTooLargeError if
+    content exceeds MAX_SESSION_FILE_BYTES."""
+    size = len(content.encode("utf-8"))
+    if size > MAX_SESSION_FILE_BYTES:
+        raise SessionFileTooLargeError(
+            f"'{filename}' is {size // 1000}KB, over the {MAX_SESSION_FILE_BYTES // 1000}KB limit "
+            f"for per-thread context files."
+        )
+
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO session_context_files (session_id, filename, content, enabled, created_at) "
+        "VALUES (?, ?, ?, 1, ?)",
+        (session_id, filename, content, _now()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_session_context_files(session_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM session_context_files WHERE session_id = ? ORDER BY created_at ASC",
+        (session_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_session_context_file_enabled(file_id: int, enabled: bool) -> None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE session_context_files SET enabled = ? WHERE id = ?",
+        (1 if enabled else 0, file_id),
+    )
+    conn.commit()
+
+
+def delete_session_context_file(file_id: int) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM session_context_files WHERE id = ?", (file_id,))
+    conn.commit()
+
+
+def count_session_context_files(session_id: int) -> int:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM session_context_files WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    return row["cnt"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+def export_session_markdown(session_id: int) -> str:
+    """Generates a clean Markdown transcript: question/answer pairs, sources,
+    timestamps. Used by the 'Export Chat' UI action (Section 7)."""
+    session = get_session(session_id)
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+
+    messages = get_messages(session_id)
+    lines = [f"# {session['title']}", f"_Exported: {_now()}_", ""]
+
+    for m in messages:
+        role_label = "User" if m["role"] == "user" else "Gayatri AI"
+        lines.append(f"### {role_label} — {m['timestamp']}")
+        lines.append(m["content"])
+
+        if m["sources"]:
+            lines.append("")
+            lines.append("**Sources:**")
+            for i, src in enumerate(m["sources"], 1):
+                title = src.get("title", "Untitled")
+                href = src.get("href", "")
+                lines.append(f"{i}. [{title}]({href})")
+
+        lines.append("")
+
+    return "\n".join(lines)
