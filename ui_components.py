@@ -850,6 +850,18 @@ def build_sidebar(session_items: list, context_rows: list, session_file_rows: li
 def input_dock(on_send, on_stop, on_attach, model_ids: list[str], selected_model: str,
                on_model_change, current_search_mode: str, on_search_mode_change,
                is_generating: bool = False, window_width: float = 1200) -> ft.Container:
+    def handle_submit(e=None):
+        if is_generating:
+            return
+        val = (text_field.value or "").strip()
+        if val:
+            text_field.value = ""
+            try:
+                text_field.update()
+            except Exception:
+                pass
+            on_send(val)
+
     text_field = ft.TextField(
         hint_text="Ask anything, or paste a URL to analyze...",
         hint_style=ft.TextStyle(color=T["text_secondary"]),
@@ -858,6 +870,7 @@ def input_dock(on_send, on_stop, on_attach, model_ids: list[str], selected_model
         multiline=True, min_lines=1, max_lines=6,
         shift_enter=True,
         bgcolor="transparent", color=T["text_primary"], text_size=15,
+        on_submit=handle_submit,
     )
 
     send_button = ft.Container(
@@ -867,7 +880,7 @@ def input_dock(on_send, on_stop, on_attach, model_ids: list[str], selected_model
         bgcolor=T["accent_highlight"] if is_generating else T["accent_primary"],
         alignment=ft.alignment.center,
         ink=True,
-        on_click=(lambda e: on_stop()) if is_generating else (lambda e: on_send(text_field.value)),
+        on_click=(lambda e: on_stop()) if is_generating else (lambda e: handle_submit()),
         animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
     )
 

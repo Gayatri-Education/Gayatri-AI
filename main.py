@@ -98,6 +98,10 @@ def main(page: ft.Page):
         width=10, height=10, border_radius=5, bgcolor=ui.T["accent_secondary"]
     )
     
+    top_bar_model_label = ft.Text(
+        state["model"] or "Connecting...", size=11, color=ui.T["text_primary"], weight=ft.FontWeight.W_600
+    )
+    
     top_bar = ft.Container(
         content=ft.Row(
             [
@@ -109,7 +113,7 @@ def main(page: ft.Page):
                     spacing=8,
                 ),
                 ft.Container(expand=True),
-                ft.Text("Qwen 2.5 7B", size=11, color=ui.T["text_primary"], weight=ft.FontWeight.W_600, key="model_label"),
+                top_bar_model_label,
             ],
             alignment=ft.MainAxisAlignment.START,
         ),
@@ -170,12 +174,11 @@ def main(page: ft.Page):
                 state["model"] = models[0]
             status_banner.visible = False
             top_bar_status_dot.bgcolor = ui.T["accent_secondary"]
-            # Update model label
-            model_lbl = top_bar.content.controls[2]
-            model_lbl.value = state["model"] or "No model loaded"
+            top_bar_model_label.value = state["model"] or "No model loaded"
         except LMStudioError as e:
             state["model_ids"] = []
             top_bar_status_dot.bgcolor = ui.T["accent_highlight"]
+            top_bar_model_label.value = "Offline"
             if show_banner_on_fail:
                 status_banner.content = ft.Row(
                     [
@@ -212,15 +215,17 @@ def main(page: ft.Page):
     def load_session(session_id: int):
         state["session_id"] = session_id
         chat_history.controls.clear()
+        last_user_query = ""
         for m in db.get_messages(session_id):
             if m["role"] == "user":
+                last_user_query = m["content"]
                 chat_history.controls.append(ft.Row([ui.user_bubble(m["content"])], alignment=ft.MainAxisAlignment.END))
             elif m["role"] == "assistant":
                 chat_history.controls.append(
                     ui.ai_message_block(
                         m["content"], sources=m["sources"], chunks_used=m["md_chunks_used"],
                         on_copy=lambda content=m["content"]: page.set_clipboard(content),
-                        on_regenerate=lambda: None,
+                        on_regenerate=(lambda q=last_user_query: handle_send(q)) if last_user_query else (lambda: None),
                     )
                 )
         show_empty_state_if_needed()
@@ -356,7 +361,6 @@ def main(page: ft.Page):
             is_generating=state["is_generating"],
             window_width=page.window.width if page.window.width else 1200,
         )
-        main_column.controls[3] = new_dock
         input_dock_holder.content = new_dock
 
     def handle_attach(e=None):
@@ -487,6 +491,10 @@ def main(page: ft.Page):
         page_docs = []
 
         try:
+            if state["stop_requested"]:
+                live_block.set_answer("⏹️ Cancelled.")
+                return
+
             urls_in_query = extract_urls(query)
 
             do_url_crawl = False
@@ -510,6 +518,10 @@ def main(page: ft.Page):
 
             add_step_and_scroll("Deciding search requirements...", "done")
 
+            if state["stop_requested"]:
+                live_block.set_answer("⏹️ Cancelled.")
+                return
+
             category = "unclear"
 
             # STEP 2: Scrape / Web Search
@@ -527,8 +539,12 @@ def main(page: ft.Page):
                 add_step_and_scroll("Generating search keywords...", "done")
                 db.increment_stats(state["session_id"], keywords_generated=len(keywords), searches_performed=1)
 
+                if state["stop_requested"]:
+                    live_block.set_answer("⏹️ Cancelled.")
+                    return
+
                 add_step_and_scroll(f"Querying web index for '{keywords[0]}'...", "running")
-                sources = multi_search_enhanced(keywords)
+                sources = multi_search_enhanced(keywords, stop_checker=lambda: state["stop_requested"])
                 add_step_and_scroll(f"Querying web index for '{keywords[0]}'...", "done")
                 
                 add_step_and_scroll(f"Found {len(sources)} sources", "done")
@@ -537,6 +553,10 @@ def main(page: ft.Page):
                 # Display compact source badges instantly
                 live_block.set_sources(sources)
                 chat_history.scroll_to(offset=-1, duration=150)
+
+            if state["stop_requested"]:
+                live_block.set_answer("⏹️ Cancelled.")
+                return
 
             # STEP 3: Context Retrieval
             add_step_and_scroll("Retrieving guidelines and context files...", "running")
@@ -565,6 +585,10 @@ def main(page: ft.Page):
             if chunks_used:
                 add_step_and_scroll(f"Ranked and selected {len(chunks_used)} document context chunk(s)", "done")
 
+            if state["stop_requested"]:
+                live_block.set_answer("⏹️ Cancelled.")
+                return
+
             # STEP 4: Streaming Answer
             target_words = choose_length(query, category=category)
             messages = build_grounded_messages(
@@ -584,6 +608,10 @@ def main(page: ft.Page):
                 
                 # Dynamic scroll to follow response pointer
                 chat_history.scroll_to(offset=-1, duration=100)
+
+            if state["stop_requested"] and not full_text:
+                live_block.set_answer("⏹️ Response stopped.")
+                return
 
             # Generate related questions to match mockup suggestions
             related_questions = [

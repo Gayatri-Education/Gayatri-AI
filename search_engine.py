@@ -18,7 +18,6 @@ from readability import Document
 import tldextract
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
 from ddgs import DDGS
 
 import config
@@ -31,11 +30,12 @@ _embed_model_lock = threading.Lock()
 _embed_model = None
 
 
-def _get_embed_model() -> SentenceTransformer:
+def _get_embed_model():
     global _embed_model
     if _embed_model is None:
         with _embed_model_lock:
             if _embed_model is None:
+                from sentence_transformers import SentenceTransformer
                 _embed_model = SentenceTransformer(config.EMBED_MODEL)
     return _embed_model
 
@@ -198,11 +198,27 @@ def sim_tfidf(chunks: list[str], query: str) -> list[float]:
         return [0.0] * len(chunks)
 
 
+_CHUNK_EMBED_CACHE: dict[str, object] = {}
+_CHUNK_EMBED_LOCK = threading.Lock()
+
+
+def get_chunk_embedding(text: str, model):
+    with _CHUNK_EMBED_LOCK:
+        if text in _CHUNK_EMBED_CACHE:
+            return _CHUNK_EMBED_CACHE[text]
+    emb = model.encode([text], convert_to_numpy=True, normalize_embeddings=True)[0]
+    with _CHUNK_EMBED_LOCK:
+        if len(_CHUNK_EMBED_CACHE) < 2000:
+            _CHUNK_EMBED_CACHE[text] = emb
+    return emb
+
+
 def sim_sem(chunks: list[str], query: str) -> list[float]:
     if not chunks:
         return []
+    import numpy as np
     model = _get_embed_model()
-    chunk_embs = model.encode(chunks, convert_to_numpy=True, normalize_embeddings=True)
+    chunk_embs = np.array([get_chunk_embedding(c, model) for c in chunks])
     query_emb = model.encode([query], convert_to_numpy=True, normalize_embeddings=True)
     sims = cosine_similarity(chunk_embs, query_emb).flatten()
     return sims.tolist()
@@ -312,18 +328,23 @@ def crawl_site(start_url: str, max_pages: int = None) -> list[PageDoc]:
 # Search decision gate: heuristic fast path + LLM fallback
 # ---------------------------------------------------------------------------
 _TIME_SENSITIVE_PATTERNS = re.compile(
-    r"\b(today|yesterday|this week|latest|current|currently|now|breaking|"
+    r"\b(today|yesterday|this week|this month|this year|latest|current|currently|now|breaking|"
     r"recent|recently|update|updated|202[4-9]|price|stock|score|weather|"
-    r"news|release date|who is the current|as of)\b",
+    r"news|release date|who is the current|as of|who won|election|standing|schedule|market|live)\b",
     re.IGNORECASE,
 )
 _VERIFY_PATTERNS = re.compile(
-    r"\b(verify|confirm|is it true|fact.?check|source|citation|according to)\b",
+    r"\b(verify|confirm|is it true|fact.?check|source|citation|according to|who is|where is|when was|when did)\b",
     re.IGNORECASE,
 )
 _STATIC_PATTERNS = re.compile(
-    r"\b(explain|define|what is|how does|write|summarize|translate|"
-    r"convert|calculate|joke|poem|story)\b",
+    r"\b(explain|definition|define|what is|what are|how to|how do|how does|why is|why does|"
+    r"write|code|debug|fix|create|generate|summarize|translate|convert|calculate|solve|"
+    r"joke|poem|story|help me|teach me|implement|class|function|script|example|difference between|compare|pros and cons)\b",
+    re.IGNORECASE,
+)
+_CONVERSATIONAL_PATTERNS = re.compile(
+    r"^(hi|hello|hey|greetings|good morning|good afternoon|good evening|who are you|what can you do|thanks|thank you|ok|okay|bye|help)\b",
     re.IGNORECASE,
 )
 
@@ -334,16 +355,24 @@ def heuristic_gate(query: str) -> tuple[bool, float, str, str]:
     if urls:
         return True, 1.0, "Query contains a URL", "url"
 
+    q_strip = query.strip()
+    if _CONVERSATIONAL_PATTERNS.match(q_strip):
+        return False, 0.95, "Conversational pattern detected", "static"
+
     if _TIME_SENSITIVE_PATTERNS.search(query):
-        return True, 0.9, "Time-sensitive or current-events pattern detected", "time_sensitive"
+        return True, 0.95, "Time-sensitive or current-events pattern detected", "time_sensitive"
 
     if _VERIFY_PATTERNS.search(query):
-        return True, 0.88, "Verification/fact-check pattern detected", "verify"
+        return True, 0.90, "Verification/fact-check pattern detected", "verify"
 
     if _STATIC_PATTERNS.search(query) and not _TIME_SENSITIVE_PATTERNS.search(query):
-        return False, 0.8, "Static/explanatory query pattern detected", "static"
+        return False, 0.92, "Static/explanatory query pattern detected", "static"
 
-    # ambiguous — low confidence, defer to LLM gate
+    # Default heuristic for general reasoning & general queries
+    words = q_strip.split()
+    if len(words) >= 4 and not _TIME_SENSITIVE_PATTERNS.search(query):
+        return False, 0.86, "General knowledge / reasoning pattern", "static"
+
     return False, 0.5, "No strong heuristic signal", "unclear"
 
 
@@ -407,23 +436,49 @@ _KEYWORD_SYSTEM_PROMPT = (
 )
 
 
-def gen_keywords_enhanced(query: str, client: LLMClient, model: str) -> list[str]:
-    messages = [
-        {"role": "system", "content": _KEYWORD_SYSTEM_PROMPT},
-        {"role": "user", "content": query},
-    ]
-    try:
-        result = client.chat_json(model, messages, temperature=config.GATE_TEMP,
-                                   max_tokens=config.MAX_TOKENS_GATE)
-        keywords = result.get("keywords", [])
-        keywords = [normalize_ws(str(k)) for k in keywords if normalize_ws(str(k))]
-        if keywords:
-            return keywords[:5]
-    except (LMStudioError, ValueError, TypeError):
-        pass
+def extract_fast_keywords(query: str) -> list[str]:
+    """Fast rule-based keyword extraction without calling LLM."""
+    clean = re.sub(r"[^\w\s-]", " ", query)
+    clean = normalize_ws(clean)
+    if not clean:
+        return [query.strip()]
 
-    # graceful degradation: fall back to the raw query itself
-    return [query.strip()]
+    # Strip conversational lead-ins
+    cleaned = re.sub(
+        r"^(please\s+)?(can you\s+)?(tell me\s+)?(what is\s+|what are\s+|how to\s+|who is\s+|when did\s+|where is\s+|search for\s+|find\s+)",
+        "", clean, flags=re.IGNORECASE
+    ).strip()
+
+    keywords = []
+    if cleaned and len(cleaned) > 2:
+        keywords.append(cleaned)
+    if clean != cleaned and clean:
+        keywords.append(clean)
+    return keywords or [clean]
+
+
+def gen_keywords_enhanced(query: str, client: LLMClient = None, model: str = None) -> list[str]:
+    # Fast path: direct extraction avoids 3-8s local LLM latency
+    fast_kw = extract_fast_keywords(query)
+    if fast_kw and len(fast_kw[0].split()) <= 10:
+        return fast_kw[:3]
+
+    if client and model:
+        messages = [
+            {"role": "system", "content": _KEYWORD_SYSTEM_PROMPT},
+            {"role": "user", "content": query},
+        ]
+        try:
+            result = client.chat_json(model, messages, temperature=config.GATE_TEMP,
+                                       max_tokens=config.MAX_TOKENS_GATE)
+            keywords = result.get("keywords", [])
+            keywords = [normalize_ws(str(k)) for k in keywords if normalize_ws(str(k))]
+            if keywords:
+                return keywords[:5]
+        except (LMStudioError, ValueError, TypeError):
+            pass
+
+    return fast_kw or [query.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -445,25 +500,38 @@ def duck_search(query: str, max_results: int = None) -> list[dict]:
     return results
 
 
-def multi_search_enhanced(keywords: list[str], max_sources: int = None) -> list[dict]:
-    """Search across multiple keyword variants, dedupe by domain, cap at MAX_SOURCES."""
+def multi_search_enhanced(keywords: list[str], max_sources: int = None, stop_checker=None) -> list[dict]:
+    """Search across multiple keyword variants in parallel, dedupe by domain, cap at MAX_SOURCES."""
     cap = max_sources if max_sources is not None else config.MAX_SOURCES
     seen_domains = set()
     sources = []
 
-    for kw in keywords:
-        for r in duck_search(kw):
-            href = r.get("href", "")
-            if not href:
+    if not keywords:
+        return []
+
+    # Parallelize web searches across up to 3 keywords
+    kw_to_search = keywords[:3]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(kw_to_search))) as pool:
+        future_map = {pool.submit(duck_search, kw): kw for kw in kw_to_search}
+        for future in concurrent.futures.as_completed(future_map):
+            if stop_checker and stop_checker():
+                break
+            try:
+                results = future.result()
+                for r in results:
+                    href = r.get("href", "")
+                    if not href:
+                        continue
+                    ext = tldextract.extract(href)
+                    domain_key = f"{ext.domain}.{ext.suffix}"
+                    if domain_key in seen_domains:
+                        continue
+                    seen_domains.add(domain_key)
+                    sources.append(r)
+                    if len(sources) >= cap:
+                        return sources
+            except Exception:
                 continue
-            ext = tldextract.extract(href)
-            domain_key = f"{ext.domain}.{ext.suffix}"
-            if domain_key in seen_domains:
-                continue
-            seen_domains.add(domain_key)
-            sources.append(r)
-            if len(sources) >= cap:
-                return sources
 
     return sources
 
