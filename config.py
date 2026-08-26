@@ -100,33 +100,49 @@ SEARCH_MODE_URL_ONLY = "url_only"
 DEFAULT_SEARCH_MODE = SEARCH_MODE_AUTO
 
 # ---------------------------------------------------------------------------
-# Gen Z Theme — Section 6.1 (Flet UI)
+# Terracotta & Indigo Slate Theme (Flet UI)
 # ---------------------------------------------------------------------------
 THEME_DARK = {
-    "bg": "#07090E",                  # Deep near-black
-    "surface": "#121622",             # Dark glass slate
-    "border": "#1E2538",              # Dark border
-    "accent_primary": "#6C5CE7",      # purple
-    "accent_secondary": "#00B894",    # emerald
-    "accent_highlight": "#FD79A8",    # pink
-    "text_primary": "#F5F6FA",        # light primary text
-    "text_secondary": "#9AA1B1",      # light secondary text
+    "bg": "#1A1A1A",                  # --background
+    "surface": "#202020",             # --card / --popover
+    "surface_sidebar": "#1F1F1F",     # --sidebar
+    "surface_input": "#303030",       # --input
+    "surface_muted": "#2A2A2A",       # --muted
+    "border": "#353535",              # --border / --sidebar-border
+    "accent_primary": "#DF6035",      # --primary (Terracotta)
+    "accent_secondary": "#284167",    # --secondary (Deep Indigo)
+    "accent_highlight": "#EF4444",    # --destructive
+    "accent_subtle": "#2A3656",       # --accent
+    "accent_subtle_text": "#BFDBFE",  # --accent-foreground
+    "accent_green": "#E16F41",        # --chart-2
+    "chart_1": "#85A6C7",             # --chart-1
+    "text_primary": "#E5E5E5",        # --foreground / --card-foreground
+    "text_secondary": "#808080",      # --muted-foreground
 }
 
 THEME_LIGHT = {
-    "bg": "#F8FAFC",                  # Slate 50 (light background)
-    "surface": "#FFFFFF",             # Pure white card
-    "border": "#E2E8F0",              # Slate 200 border
-    "accent_primary": "#6C5CE7",      # purple
-    "accent_secondary": "#0984E3",    # Blue accent
-    "accent_highlight": "#D63031",    # Red highlight
-    "text_primary": "#0F172A",        # Slate 900 primary text
-    "text_secondary": "#475569",      # Slate 600 secondary text
+    "bg": "#E8EBED",                  # --background
+    "surface": "#FFFFFF",             # --card / --popover
+    "surface_sidebar": "#DDDFE2",     # --sidebar
+    "surface_input": "#F4F5F7",       # --input
+    "surface_muted": "#F9FAFB",       # --muted
+    "border": "#CCCCCC",              # --border
+    "border_sidebar": "#E5E7EB",      # --sidebar-border
+    "accent_primary": "#DF6035",      # --primary (Terracotta)
+    "accent_secondary": "#2F4B79",    # --secondary (Deep Slate Indigo)
+    "accent_highlight": "#EF4444",    # --destructive
+    "accent_subtle": "#D6E4F0",       # --accent
+    "accent_subtle_text": "#1E3A8A",  # --accent-foreground
+    "accent_green": "#7399BF",        # --chart-1
+    "chart_1": "#7399BF",
+    "text_primary": "#333333",        # --foreground / --card-foreground
+    "text_secondary": "#6B7280",      # --muted-foreground
 }
 
-FONT_FAMILY = "Inter"                # falls back to Segoe UI Variable if unavailable
-BORDER_RADIUS = 16                   # px, within 12-20px spec range
-SIDEBAR_WIDTH = 280                  # px, per Section 6.2 layout spec
+FONT_FAMILY = "Outfit, sans-serif"
+FONT_MONO = "Fira Code, monospace"
+BORDER_RADIUS = 12                   # ~0.5rem - 0.75rem
+SIDEBAR_WIDTH = 280                  # px, per layout spec
 
 # ---------------------------------------------------------------------------
 # Feature toggles

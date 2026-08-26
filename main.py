@@ -76,8 +76,20 @@ def main(page: ft.Page):
         chat_history_wrapper.bgcolor = ui.T["bg"]
         main_area.bgcolor = ui.T["bg"]
         
+        top_bar_model_label.color = ui.T["text_primary"]
+        if hasattr(top_bar, "content") and top_bar.content and top_bar.content.controls:
+            if top_bar.content.controls[0].controls and len(top_bar.content.controls[0].controls) > 1:
+                top_bar.content.controls[0].controls[1].color = ui.T["text_secondary"]
+        
         rebuild_sidebar()
         rebuild_input_dock()
+        
+        if state["session_id"]:
+            load_session(state["session_id"])
+        else:
+            chat_history.controls.clear()
+            show_empty_state_if_needed()
+            
         page.update()
 
     # ------------------------------------------------------------------
