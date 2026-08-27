@@ -70,8 +70,22 @@ def init_db() -> None:
             FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL DEFAULT 'fact',
+            key TEXT NOT NULL,
+            content TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            source_session_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE SET NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_session_context_files_session_id ON session_context_files(session_id);
+        CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key);
+        CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
         """
     )
     conn.commit()
@@ -325,8 +339,91 @@ def export_session_markdown(session_id: int) -> str:
             for i, src in enumerate(m["sources"], 1):
                 title = src.get("title", "Untitled")
                 href = src.get("href", "")
-                lines.append(f"{i}. [{title}]({href})")
-
-        lines.append("")
-
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Persistent Long-Term Memory (Second Brain)
+# ---------------------------------------------------------------------------
+def add_or_update_memory(
+    key: str,
+    content: str,
+    category: str = "fact",
+    confidence: float = 1.0,
+    session_id: int = None,
+) -> int:
+    """Inserts a new memory or updates existing memory matching the key."""
+    conn = get_connection()
+    now = _now()
+    clean_key = (key or "").strip().lower()
+    clean_content = (content or "").strip()
+
+    existing = conn.execute("SELECT id FROM memories WHERE LOWER(key) = ?", (clean_key,)).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE memories SET content = ?, category = ?, confidence = ?, "
+            "source_session_id = COALESCE(?, source_session_id), updated_at = ? WHERE id = ?",
+            (clean_content, category, confidence, session_id, now, existing["id"]),
+        )
+        conn.commit()
+        return existing["id"]
+
+    cur = conn.execute(
+        "INSERT INTO memories (category, key, content, confidence, source_session_id, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (category, key.strip(), clean_content, confidence, session_id, now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_memories(category: str = None) -> list[dict]:
+    """Returns all stored memories ordered by updated_at descending."""
+    conn = get_connection()
+    if category:
+        rows = conn.execute(
+            "SELECT * FROM memories WHERE category = ? ORDER BY updated_at DESC", (category,)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM memories ORDER BY updated_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_memory(memory_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_memory(memory_id: int, content: str, category: str = None) -> None:
+    conn = get_connection()
+    now = _now()
+    if category:
+        conn.execute(
+            "UPDATE memories SET content = ?, category = ?, updated_at = ? WHERE id = ?",
+            (content.strip(), category, now, memory_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE memories SET content = ?, updated_at = ? WHERE id = ?",
+            (content.strip(), now, memory_id),
+        )
+    conn.commit()
+
+
+def delete_memory(memory_id: int) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+    conn.commit()
+
+
+def clear_all_memories() -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM memories")
+    conn.commit()
+
+
+def count_memories() -> int:
+    conn = get_connection()
+    row = conn.execute("SELECT COUNT(*) as cnt FROM memories").fetchone()
+    return row["cnt"] if row else 0

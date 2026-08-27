@@ -17,14 +17,16 @@ This project was developed as part of the **[DBert Internship Program](https://d
 ## ✨ Features
 
 - 🧠 **Local LLM Integration** — Connects to [LM Studio](https://lmstudio.ai/) for fully offline, privacy-first AI conversations
+- 🔬 **Autonomous Deep Research Mode** — Multi-hop inquiry with iterative query decomposition, evidence gap analysis, and auto-export to markdown dossiers
+- 🧬 **Persistent Long-Term Memory (Second Brain)** — Background user trait/preference learning and dedicated Memory Vault with semantic context injection
 - 🌐 **Web Search Grounding** — Automatically searches the web to give up-to-date, source-backed answers
 - 🔗 **URL Crawling** — Paste a URL and Gayatri AI reads the entire website to answer questions about it
 - 📄 **Context Files (RAG)** — Attach Markdown files as long-term or per-session context documents
 - 💬 **Multi-Session Chat History** — Persistent chat sessions stored in a local SQLite database
-- 🎨 **Dark / Light Theme** — Smooth animated theme switching
+- 🎨 **Dark / Light Theme** — Smooth animated theme switching with Terracotta & Indigo Slate design system
 - 📱 **Responsive Layout** — Auto-adapts sidebar and padding to any window size
 - ⚡ **Live Streaming Responses** — Real-time token streaming with step-by-step progress indicators
-- 🔍 **Smart Search Modes** — Auto, Force Web, URL Only, or No Search
+- 🔍 **Smart Search Modes** — Auto, Deep Research 🔬, Force Web, URL Only, or Search Off
 - 📊 **Session Statistics** — Tracks keywords generated, searches performed, and sources found
 
 ---
@@ -39,6 +41,8 @@ This project was developed as part of the **[DBert Internship Program](https://d
 | Database | SQLite (via `db.py`) |
 | Web Search | DuckDuckGo / multi-source search engine |
 | Context / RAG | Custom embedding + chunk ranking (`context_manager.py`) |
+| Deep Research | Multi-hop planner & gap analyzer (`deep_research.py`) |
+| Second Brain | Long-term memory extraction & retrieval (`memory_manager.py`) |
 | Language | Python 3.10+ |
 
 ---
@@ -77,10 +81,13 @@ Gayatri-AI/
 ├── ui_components.py     # All Flet UI widgets and components
 ├── llm_client.py        # LM Studio API client with streaming support
 ├── search_engine.py     # Web search, URL crawling, and grounded context builder
+├── deep_research.py     # Multi-hop inquiry, gap analysis, and dossier synthesizer
+├── memory_manager.py    # Long-term memory extractor & semantic retrieval engine
 ├── context_manager.py   # RAG context file manager with embedding + ranking
-├── db.py                # SQLite database layer for sessions and messages
+├── db.py                # SQLite database layer for sessions, messages, and memories
 ├── diagnostic_test.py   # Connectivity and system diagnostics
 ├── requirements.txt     # Python dependencies
+├── exports/             # Exported research dossiers and chat transcripts
 └── gayatri.db           # Local SQLite database (auto-created on first run)
 ```
 
@@ -94,9 +101,10 @@ Key settings live in `config.py` and can also be changed via the in-app Settings
 |---|---|---|
 | `LM_STUDIO_BASE_URL` | `http://localhost:1234` | LM Studio server URL |
 | `DEFAULT_MODEL` | `qwen2.5-7b` | Default LLM model ID |
-| `SEARCH_RESULTS_PER_QUERY` | `5` | Number of web results per search |
-| `MAX_MD_TOKENS` | `4000` | Max context token budget |
-| `HISTORY_TURNS` | `10` | Recent conversation turns to include |
+| `SEARCH_RESULTS_PER_QUERY` | `6` | Number of web results per search |
+| `MAX_MD_TOKENS` | `1200` | Max context token budget |
+| `MAX_RESEARCH_HOPS` | `2` | Max multi-hop research exploration loops |
+| `ENABLE_LONG_TERM_MEMORY`| `True` | Persistent memory & Second Brain active |
 | `SIDEBAR_WIDTH` | `280` | Sidebar width in pixels |
 
 ---
@@ -106,9 +114,10 @@ Key settings live in `config.py` and can also be changed via the in-app Settings
 | Mode | Behavior |
 |---|---|
 | **Auto** | AI decides whether a web search is needed |
-| **Force Web** | Always searches the web before responding |
+| **Deep Research 🔬** | Multi-hop autonomous inquiry, gap analysis & comprehensive dossier synthesis |
+| **Web Search** | Always searches the web before responding |
 | **URL Only** | Only crawls URLs pasted in the query |
-| **No Search** | Pure local LLM — no internet access |
+| **Search Off** | Pure local LLM — no internet access |
 
 ---
 

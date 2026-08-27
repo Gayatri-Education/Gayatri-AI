@@ -97,7 +97,23 @@ SEARCH_MODE_AUTO = "auto"
 SEARCH_MODE_FORCE_WEB = "force_web"
 SEARCH_MODE_FORCE_NONE = "force_none"
 SEARCH_MODE_URL_ONLY = "url_only"
+SEARCH_MODE_DEEP_RESEARCH = "deep_research"
 DEFAULT_SEARCH_MODE = SEARCH_MODE_AUTO
+
+# ---------------------------------------------------------------------------
+# Deep Research Mode Parameters
+# ---------------------------------------------------------------------------
+MAX_RESEARCH_HOPS = 2                # Maximum iterative search loops
+MAX_SUB_QUERIES = 3                  # Max sub-questions decomposed per hop
+MAX_SOURCES_DEEP = 12                # Max total sources collected during deep research
+DEEP_RESEARCH_MAX_TOKENS = 3000      # Max output tokens for research dossier
+
+# ---------------------------------------------------------------------------
+# Persistent Long-Term Memory (Second Brain) Parameters
+# ---------------------------------------------------------------------------
+ENABLE_LONG_TERM_MEMORY = True
+MAX_MEMORY_ITEMS_IN_PROMPT = 6       # Maximum relevant memories injected per turn
+MEMORY_CONFIDENCE_THRESHOLD = 0.65   # Minimum extraction confidence score (0.0 - 1.0)
 
 # ---------------------------------------------------------------------------
 # Terracotta & Indigo Slate Theme (Flet UI)
