@@ -84,7 +84,7 @@ def main(page: ft.Page):
         rebuild_sidebar()
         rebuild_input_dock()
         
-        if state["session_id"]:
+        if state["session_id"] and not state["is_generating"]:
             load_session(state["session_id"])
         else:
             chat_history.controls.clear()
