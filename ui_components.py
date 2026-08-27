@@ -10,6 +10,7 @@ Maintains exact component layout & sections:
 
 import flet as ft
 import config
+import db
 
 # Dynamic theme routing to support Dark/Light mode on the fly
 _current_theme = config.THEME_DARK
@@ -844,15 +845,17 @@ def connection_status_dot(connected: bool) -> ft.Container:
 _MODE_LABELS = {
     config.SEARCH_MODE_AUTO: "Auto",
     config.SEARCH_MODE_FORCE_WEB: "Web Search",
-    config.SEARCH_MODE_FORCE_NONE: "Search Off",
+    config.SEARCH_MODE_DEEP_RESEARCH: "Deep Research 🔬",
     config.SEARCH_MODE_URL_ONLY: "URL Only",
+    config.SEARCH_MODE_FORCE_NONE: "Search Off",
 }
 
 _MODE_ICONS = {
     config.SEARCH_MODE_AUTO: ft.Icons.AUTO_AWESOME_ROUNDED,
     config.SEARCH_MODE_FORCE_WEB: ft.Icons.PUBLIC_ROUNDED,
-    config.SEARCH_MODE_FORCE_NONE: ft.Icons.OFFLINE_BOLT_ROUNDED,
+    config.SEARCH_MODE_DEEP_RESEARCH: ft.Icons.TRAVEL_EXPLORE_ROUNDED,
     config.SEARCH_MODE_URL_ONLY: ft.Icons.LINK_ROUNDED,
+    config.SEARCH_MODE_FORCE_NONE: ft.Icons.OFFLINE_BOLT_ROUNDED,
 }
 
 def search_mode_toggle(current_mode: str, on_change) -> ft.PopupMenuButton:
@@ -939,9 +942,201 @@ def settings_dialog(base_url: str, embed_model: str, search_result_count: int,
 
 
 # ---------------------------------------------------------------------------
+# Memory Vault (Second Brain) Dialog & Item Cards
+# ---------------------------------------------------------------------------
+def memory_item_card(memory: dict, on_delete) -> ft.Container:
+    category = memory.get("category", "fact").lower()
+    cat_colors = {
+        "preference": T["accent_secondary"],
+        "project": T["accent_primary"],
+        "fact": T.get("accent_green", "#E16F41"),
+        "skill": T.get("chart_1", "#85A6C7"),
+        "instruction": T["accent_highlight"],
+    }
+    cat_color = cat_colors.get(category, T["accent_primary"])
+
+    return ft.Container(
+        content=ft.Row(
+            [
+                ft.Container(
+                    content=ft.Text(category.upper(), size=9, weight=ft.FontWeight.BOLD, color="#FFFFFF", font_family=config.FONT_MONO),
+                    padding=ft.padding.symmetric(horizontal=6, vertical=3),
+                    border_radius=4,
+                    bgcolor=cat_color,
+                ),
+                ft.Column(
+                    [
+                        ft.Text(memory.get("key", ""), size=12, weight=ft.FontWeight.BOLD, color=T["text_primary"], font_family=config.FONT_FAMILY),
+                        ft.Text(memory.get("content", ""), size=11.5, color=T["text_secondary"], font_family=config.FONT_FAMILY),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
+                    icon_size=13,
+                    icon_color=T["text_secondary"],
+                    tooltip="Delete memory",
+                    on_click=lambda e, mid=memory["id"]: on_delete(mid),
+                ),
+            ],
+            spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=config.BORDER_RADIUS,
+        bgcolor=T.get("surface_muted", T["surface"]),
+        border=ft.border.all(1, T["border"]),
+    )
+
+
+def memory_vault_dialog(memories: list, on_add_memory, on_delete_memory, on_clear_all) -> ft.AlertDialog:
+    key_field = ft.TextField(
+        label="Key (e.g. user_tech_stack)",
+        bgcolor=T.get("surface_input", T["surface"]),
+        color=T["text_primary"],
+        border_color=T["border"],
+        border_radius=config.BORDER_RADIUS,
+        text_size=12,
+        dense=True,
+    )
+    content_field = ft.TextField(
+        label="Memory Fact (e.g. Prefers Python and Flutter)",
+        bgcolor=T.get("surface_input", T["surface"]),
+        color=T["text_primary"],
+        border_color=T["border"],
+        border_radius=config.BORDER_RADIUS,
+        text_size=12,
+        multiline=True,
+        min_lines=1,
+        max_lines=3,
+        dense=True,
+    )
+    cat_dropdown = ft.Dropdown(
+        value="preference",
+        options=[
+            ft.dropdown.Option("preference", "Preference"),
+            ft.dropdown.Option("project", "Project"),
+            ft.dropdown.Option("fact", "Fact"),
+            ft.dropdown.Option("skill", "Skill"),
+            ft.dropdown.Option("instruction", "Instruction"),
+        ],
+        bgcolor=T.get("surface_input", T["surface"]),
+        color=T["text_primary"],
+        border_color=T["border"],
+        border_radius=config.BORDER_RADIUS,
+        text_size=12,
+        dense=True,
+    )
+
+    items_column = ft.Column(
+        [
+            memory_item_card(m, on_delete=lambda mid: (on_delete_memory(mid), refresh_items()))
+            for m in memories
+        ] if memories else [
+            ft.Container(
+                content=ft.Text("No memories stored yet. Talk with Gayatri or add one below.", size=12, color=T["text_secondary"], italic=True),
+                padding=20,
+                alignment=ft.alignment.center,
+            )
+        ],
+        spacing=8,
+        scroll=ft.ScrollMode.AUTO,
+        height=220,
+    )
+
+    def refresh_items():
+        all_m = db.list_memories()
+        items_column.controls = [
+            memory_item_card(m, on_delete=lambda mid: (on_delete_memory(mid), refresh_items()))
+            for m in all_m
+        ] if all_m else [
+            ft.Container(
+                content=ft.Text("No memories stored yet. Talk with Gayatri or add one below.", size=12, color=T["text_secondary"], italic=True),
+                padding=20,
+                alignment=ft.alignment.center,
+            )
+        ]
+        items_column.update()
+
+    def handle_add_click(e):
+        k = (key_field.value or "").strip()
+        c = (content_field.value or "").strip()
+        cat = cat_dropdown.value or "fact"
+        if k and c:
+            on_add_memory(k, c, cat)
+            key_field.value = ""
+            content_field.value = ""
+            key_field.update()
+            content_field.update()
+            refresh_items()
+
+    dialog = ft.AlertDialog(
+        modal=True,
+        bgcolor=T["surface"],
+        shape=ft.RoundedRectangleBorder(radius=config.BORDER_RADIUS),
+        title=ft.Row(
+            [
+                ft.Icon(ft.Icons.PSYCHOLOGY_ROUNDED, color=T["accent_primary"], size=22),
+                ft.Text("Second Brain — Memory Vault", color=T["text_primary"], font_family=config.FONT_FAMILY, weight=ft.FontWeight.BOLD, size=16),
+            ],
+            spacing=8,
+        ),
+        content=ft.Column(
+            [
+                ft.Text("Persistent knowledge and user preferences stored across sessions.", size=12, color=T["text_secondary"]),
+                ft.Container(height=4),
+                items_column,
+                ft.Divider(height=1, color=T["border"]),
+                ft.Text("Add Custom Memory", size=12.5, weight=ft.FontWeight.BOLD, color=T["text_primary"]),
+                ft.Row([key_field, cat_dropdown], spacing=8),
+                content_field,
+                ft.Row(
+                    [
+                        ft.Container(expand=True),
+                        ft.Container(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.ADD_ROUNDED, size=13, color="#FFFFFF"),
+                                    ft.Text("Save Memory", size=12, weight=ft.FontWeight.BOLD, color="#FFFFFF"),
+                                ],
+                                spacing=4,
+                                tight=True,
+                            ),
+                            padding=ft.padding.symmetric(horizontal=12, vertical=7),
+                            border_radius=config.BORDER_RADIUS,
+                            bgcolor=T["accent_primary"],
+                            ink=True,
+                            on_click=handle_add_click,
+                        ),
+                    ],
+                ),
+            ],
+            tight=True,
+            spacing=8,
+            width=460,
+        ),
+        actions=[
+            ft.TextButton(
+                "Clear All Memories",
+                style=ft.ButtonStyle(color=T["accent_highlight"]),
+                on_click=lambda e: (on_clear_all(), refresh_items()),
+            ),
+            ft.TextButton(
+                "Close",
+                style=ft.ButtonStyle(color=T["text_secondary"]),
+                on_click=lambda e: e.page.close(dialog),
+            ),
+        ],
+        actions_alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+    )
+    return dialog
+
+
+# ---------------------------------------------------------------------------
 # Sidebar action buttons
 # ---------------------------------------------------------------------------
-def sidebar_action_button(label: str, icon, on_click, primary: bool = False) -> ft.Container:
+def sidebar_action_button(label: str, icon, on_click, primary: bool = False, badge_text: str = None) -> ft.Container:
     if primary:
         return ft.Container(
             content=ft.Row(
@@ -966,14 +1161,26 @@ def sidebar_action_button(label: str, icon, on_click, primary: bool = False) -> 
             animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
         )
 
+    row_controls = [
+        ft.Icon(icon, size=14, color=T["text_secondary"]),
+        ft.Text(label, size=12.5, color=T["text_primary"], font_family=config.FONT_FAMILY),
+    ]
+    if badge_text:
+        row_controls.extend([
+            ft.Container(expand=True),
+            ft.Container(
+                content=ft.Text(badge_text, size=9.5, weight=ft.FontWeight.BOLD, color="#FFFFFF", font_family=config.FONT_MONO),
+                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                border_radius=8,
+                bgcolor=T["accent_primary"],
+            ),
+        ])
+
     return ft.Container(
         content=ft.Row(
-            [
-                ft.Icon(icon, size=14, color=T["text_secondary"]),
-                ft.Text(label, size=12.5, color=T["text_primary"], font_family=config.FONT_FAMILY),
-            ],
+            row_controls,
             spacing=8,
-            alignment=ft.MainAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.START if badge_text else ft.MainAxisAlignment.CENTER,
         ),
         padding=ft.padding.symmetric(horizontal=14, vertical=8),
         border_radius=config.BORDER_RADIUS,
@@ -981,6 +1188,7 @@ def sidebar_action_button(label: str, icon, on_click, primary: bool = False) -> 
         border=ft.border.all(1, T["border"]),
         ink=True,
         on_click=on_click,
+        width=230,
     )
 
 
@@ -989,6 +1197,7 @@ def sidebar_action_button(label: str, icon, on_click, primary: bool = False) -> 
 # ---------------------------------------------------------------------------
 def build_sidebar(session_items: list, context_rows: list, session_file_rows: list, stats: dict,
                    on_new_chat, on_open_settings, on_add_session_file,
+                   on_open_memory_vault=None, memory_count: int = 0,
                    expanded: dict = None, on_toggle_expand=None,
                    collapsed: bool = False, on_toggle_collapse=None,
                    on_toggle_theme=None) -> ft.Container:
@@ -1018,6 +1227,13 @@ def build_sidebar(session_items: list, context_rows: list, session_file_rows: li
                         ink=True,
                         tooltip="New Thread",
                         on_click=on_new_chat,
+                    ),
+                    ft.Container(height=8),
+                    ft.IconButton(
+                        icon=ft.Icons.PSYCHOLOGY_ROUNDED,
+                        icon_color=T["accent_primary"],
+                        tooltip="Memory Vault (Second Brain)",
+                        on_click=on_open_memory_vault,
                     ),
                     ft.Container(expand=True),
                     ft.IconButton(
@@ -1097,9 +1313,11 @@ def build_sidebar(session_items: list, context_rows: list, session_file_rows: li
 
     sidebar_content = [
         header,
-        ft.Container(height=6),
+        ft.Container(height=4),
         sidebar_action_button("New Thread", ft.Icons.ADD_ROUNDED, on_new_chat, primary=True),
-        ft.Container(height=8),
+        ft.Container(height=4),
+        sidebar_action_button("Second Brain", ft.Icons.PSYCHOLOGY_ROUNDED, on_open_memory_vault, badge_text=f"{memory_count} mem"),
+        ft.Container(height=6),
         recent_section,
         ft.Divider(height=1, color=T["border"]),
         context_section,
@@ -1112,7 +1330,7 @@ def build_sidebar(session_items: list, context_rows: list, session_file_rows: li
                     icon_size=14,
                     icon_color=T["accent_primary"],
                     tooltip="Add file to this thread only",
-                    on_click=lambda e: on_add_session_file(),
+                    on_click=lambda e: on_add_session_file() if on_add_session_file else None,
                 ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -1135,7 +1353,7 @@ def build_sidebar(session_items: list, context_rows: list, session_file_rows: li
         padding=15,
         content=ft.Column(
             sidebar_content,
-            spacing=10,
+            spacing=8,
             expand=True,
             scroll=ft.ScrollMode.AUTO,
         ),

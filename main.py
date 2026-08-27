@@ -18,6 +18,7 @@ from search_engine import (
     needs_search, gen_keywords_enhanced, multi_search_enhanced, crawl_site,
     choose_length, build_grounded_messages, extract_urls,
 )
+from deep_research import execute_deep_research, export_research_report
 from context_manager import ContextManager, summarize_history
 
 
@@ -304,6 +305,8 @@ def main(page: ft.Page):
             "keywords_generated": 0, "searches_performed": 0, "sources_found": 0, "pages_crawled": 0
         }
 
+        memory_count = db.count_memories()
+
         # Use helper to render inner Column and set it directly
         temp_sidebar = ui.build_sidebar(
             session_items=session_items,
@@ -313,6 +316,8 @@ def main(page: ft.Page):
             on_new_chat=new_chat,
             on_open_settings=open_settings,
             on_add_session_file=handle_attach_session_file,
+            on_open_memory_vault=open_memory_vault,
+            memory_count=memory_count,
             expanded=state["sidebar_expanded"],
             on_toggle_expand=lambda key, is_expanded: state["sidebar_expanded"].update({key: is_expanded}),
             collapsed=state["sidebar_collapsed"],
@@ -321,6 +326,34 @@ def main(page: ft.Page):
         )
         sidebar_container.content = temp_sidebar.content
         sidebar_container.padding = temp_sidebar.padding
+
+    # ------------------------------------------------------------------
+    # Memory Vault Dialog (Second Brain)
+    # ------------------------------------------------------------------
+    def open_memory_vault(e=None):
+        def on_add(key, content, category):
+            db.add_or_update_memory(key=key, content=content, category=category, session_id=state["session_id"])
+            rebuild_sidebar()
+            page.update()
+
+        def on_delete(memory_id):
+            db.delete_memory(memory_id)
+            rebuild_sidebar()
+            page.update()
+
+        def on_clear():
+            db.clear_all_memories()
+            rebuild_sidebar()
+            page.update()
+
+        memories = db.list_memories()
+        dialog = ui.memory_vault_dialog(
+            memories=memories,
+            on_add_memory=on_add,
+            on_delete_memory=on_delete,
+            on_clear_all=on_clear,
+        )
+        page.open(dialog)
 
     # ------------------------------------------------------------------
     # Settings dialog (with validation)
@@ -509,6 +542,55 @@ def main(page: ft.Page):
 
             urls_in_query = extract_urls(query)
 
+            # DEEP RESEARCH MODE EXECUTION
+            if state["search_mode"] == config.SEARCH_MODE_DEEP_RESEARCH:
+                system_context, chunks_used = context_manager.build_system_context(
+                    query, session_id=state["session_id"]
+                )
+                cancel_msg, deep_sources, deep_pages, synthesis_messages = execute_deep_research(
+                    query=query,
+                    llm_client=llm_client,
+                    model=state["model"],
+                    system_context=system_context,
+                    step_callback=add_step_and_scroll,
+                    stop_checker=lambda: state["stop_requested"],
+                )
+
+                if state["stop_requested"] or cancel_msg:
+                    live_block.set_answer(cancel_msg or "⏹️ Research cancelled.")
+                    return
+
+                if deep_sources:
+                    live_block.set_sources(deep_sources)
+                    db.increment_stats(state["session_id"], searches_performed=len(deep_sources), sources_found=len(deep_sources))
+
+                live_block.set_answer("")
+                full_text = ""
+                for chunk in llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.DEEP_RESEARCH_MAX_TOKENS):
+                    if state["stop_requested"]:
+                        break
+                    full_text += chunk
+                    live_block.set_answer(full_text)
+                    chat_history.scroll_to(offset=-1, duration=100)
+
+                if state["stop_requested"] and not full_text:
+                    live_block.set_answer("⏹️ Research stopped.")
+                    return
+
+                # Auto-export dossier to file
+                report_path = export_research_report(query, full_text, deep_sources)
+                add_step_and_scroll(f"Saved dossier to exports/{os.path.basename(report_path)}", "done")
+
+                related_questions = [
+                    f"What are the implementation risks of {query[:25]}?",
+                    "Can you generate a summary executive slide deck outline?",
+                ]
+                live_block.finalize(full_text, related_questions=related_questions, on_related_click=handle_send)
+                chat_history.scroll_to(offset=-1, duration=200)
+
+                db.add_message(state["session_id"], "assistant", full_text, sources=deep_sources, md_chunks_used=chunks_used)
+                return
+
             do_url_crawl = False
             do_search = False
 
@@ -647,6 +729,16 @@ def main(page: ft.Page):
         except Exception as e:
             live_block.set_answer(f"⚠️ Unexpected error: {e}")
         finally:
+            # Trigger background memory extraction if answer was generated
+            if 'full_text' in locals() and full_text:
+                context_manager.memory_manager.extract_memories_async(
+                    query=query,
+                    assistant_response=full_text,
+                    session_id=state["session_id"],
+                    llm_client=llm_client,
+                    model=state["model"],
+                )
+
             state["is_generating"] = False
             state["stop_requested"] = False
             rebuild_input_dock()

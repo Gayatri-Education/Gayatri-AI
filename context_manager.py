@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import config
 import db
 from search_engine import split_sections, hybrid_score, normalize_ws
+from memory_manager import MemoryManager
 
 
 @dataclass
@@ -37,6 +38,7 @@ class ContextManager:
     def __init__(self, workspace_dir: str = None):
         self.workspace_dir = workspace_dir or config.WORKSPACE_DIR
         self.files: dict[str, MDFile] = {}   # filename -> MDFile
+        self.memory_manager = MemoryManager()
         self.load_all()
 
     # ------------------------------------------------------------------
@@ -240,6 +242,14 @@ class ContextManager:
                 context_blocks.append(f"## {source_id}\n{joined}")
 
             parts.append("# PROJECT CONTEXT\n" + "\n\n".join(context_blocks))
+
+        # Long-Term Memory (Second Brain) injection
+        memories = self.memory_manager.retrieve_relevant_memories(query)
+        if memories:
+            memory_context = self.memory_manager.format_memory_context(memories)
+            if memory_context:
+                parts.append(memory_context)
+                chunks_used_labels.append(f"{len(memories)} memories")
 
         if history_summary.strip():
             parts.append(f"# RECENT CONVERSATION HISTORY\n{history_summary.strip()}")
