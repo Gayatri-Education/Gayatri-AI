@@ -9,30 +9,36 @@ Run with: python sample_ui.py
 import flet as ft
 
 # ---------------------------------------------------------------------------
-# Design Tokens (Obsidian Dark & Dawn Light)
+# Design Tokens (Terracotta & Indigo Slate)
 # ---------------------------------------------------------------------------
 THEME = {
     "dark": {
-        "bg": "#07090E",
-        "surface": "#121622",
-        "surface_card": "#181E2E",
-        "border": "#1E2538",
-        "accent": "#6C5CE7",          # Corona purple
-        "accent_alt": "#FD79A8",      # Sunrise pink
-        "accent_green": "#00B894",    # Emerald
-        "text_primary": "#F8FAFC",
-        "text_secondary": "#94A3B8",
+        "bg": "#1A1A1A",
+        "surface": "#202020",
+        "surface_card": "#202020",
+        "surface_sidebar": "#1F1F1F",
+        "surface_input": "#303030",
+        "border": "#353535",
+        "accent": "#DF6035",          # Terracotta primary
+        "accent_alt": "#EF4444",      # Destructive red
+        "accent_green": "#E16F41",    # Warm accent
+        "accent_subtle": "#2A3656",   # Deep Indigo accent
+        "text_primary": "#E5E5E5",
+        "text_secondary": "#808080",
     },
     "light": {
-        "bg": "#F8FAFC",
+        "bg": "#E8EBED",
         "surface": "#FFFFFF",
-        "surface_card": "#F1F5F9",
-        "border": "#E2E8F0",
-        "accent": "#6C5CE7",          # Corona purple
-        "accent_alt": "#D63031",      # Solar red
-        "accent_green": "#0984E3",    # Clean blue
-        "text_primary": "#0F172A",
-        "text_secondary": "#475569",
+        "surface_card": "#FFFFFF",
+        "surface_sidebar": "#DDDFE2",
+        "surface_input": "#F4F5F7",
+        "border": "#CCCCCC",
+        "accent": "#DF6035",          # Terracotta primary
+        "accent_alt": "#EF4444",      # Destructive
+        "accent_green": "#7399BF",    # Soft blue
+        "accent_subtle": "#D6E4F0",   # Ice blue
+        "text_primary": "#333333",
+        "text_secondary": "#6B7280",
     }
 }
 
@@ -279,6 +285,7 @@ def main(page: ft.Page):
             "*   **Alfvén Waves**: Low-frequency electromagnetic waves carry energy upward from the convection zone [2].",
             selectable=True,
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+            code_theme=ft.MarkdownCodeTheme.ATOM_ONE_LIGHT if active_theme_mode == "light" else ft.MarkdownCodeTheme.ATOM_ONE_DARK,
         )
 
         # d) Suggested Follow-ups
