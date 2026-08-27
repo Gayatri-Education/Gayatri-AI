@@ -248,14 +248,12 @@ class PageDoc:
     fetched_ok: bool = False
 
 
-def fetch_doc(url: str) -> PageDoc:
-    resp = http_get(url)
-    if resp is None:
-        return PageDoc(url=url, fetched_ok=False)
-
+def _build_pagedoc(url: str, resp: requests.Response) -> PageDoc:
+    """Builds a PageDoc from an already-fetched response, so callers that
+    already hold a response (e.g. crawl_site's root page) don't need to
+    issue a second HTTP GET for the same URL."""
     raw = truncate_bytes(resp.content)
     html = raw.decode(resp.encoding or "utf-8", errors="ignore")
-
     title = ""
     try:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
@@ -263,11 +261,16 @@ def fetch_doc(url: str) -> PageDoc:
             title = normalize_ws(BeautifulSoup(title_match.group(1), "html.parser").get_text())
     except Exception:
         pass
-
     text = clean_html(html)
     sections = split_sections(text)
-
     return PageDoc(url=url, title=title, text=text, sections=sections, fetched_ok=bool(text))
+
+
+def fetch_doc(url: str) -> PageDoc:
+    resp = http_get(url)
+    if resp is None:
+        return PageDoc(url=url, fetched_ok=False)
+    return _build_pagedoc(url, resp)
 
 
 def gather_internal(base_url: str, html: str, max_links: int = None) -> list[str]:
@@ -304,7 +307,7 @@ def crawl_site(start_url: str, max_pages: int = None) -> list[PageDoc]:
         return docs
 
     root_html = root_resp.text
-    root_doc = fetch_doc(start_url)
+    root_doc = _build_pagedoc(start_url, root_resp)
     docs.append(root_doc)
 
     internal_links = gather_internal(start_url, root_html)
