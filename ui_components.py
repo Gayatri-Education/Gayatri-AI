@@ -845,6 +845,7 @@ def connection_status_dot(connected: bool) -> ft.Container:
 _MODE_LABELS = {
     config.SEARCH_MODE_AUTO: "Auto",
     config.SEARCH_MODE_FORCE_WEB: "Web Search",
+    config.SEARCH_MODE_AGENT: "Agent Mode 🤖",
     config.SEARCH_MODE_DEEP_RESEARCH: "Deep Research 🔬",
     config.SEARCH_MODE_URL_ONLY: "URL Only",
     config.SEARCH_MODE_FORCE_NONE: "Search Off",
@@ -853,6 +854,7 @@ _MODE_LABELS = {
 _MODE_ICONS = {
     config.SEARCH_MODE_AUTO: ft.Icons.AUTO_AWESOME_ROUNDED,
     config.SEARCH_MODE_FORCE_WEB: ft.Icons.PUBLIC_ROUNDED,
+    config.SEARCH_MODE_AGENT: ft.Icons.SMART_TOY_ROUNDED,
     config.SEARCH_MODE_DEEP_RESEARCH: ft.Icons.TRAVEL_EXPLORE_ROUNDED,
     config.SEARCH_MODE_URL_ONLY: ft.Icons.LINK_ROUNDED,
     config.SEARCH_MODE_FORCE_NONE: ft.Icons.OFFLINE_BOLT_ROUNDED,
