@@ -207,15 +207,15 @@ def _execute_web_search_step(
         if href:
             text = crawl_site(href)
             if text:
-                crawled_excerpts.append(f"Source [{r.get('title', href)}]:\n{text[:800]}")
+                crawled_excerpts.append(f"Source [{r.get('title', href)}]: {text[:400]}")
 
-    summary_lines = [f"- {r.get('title', 'Result')}: {r.get('body', '')}" for r in top_results]
-    output_text = f"Search Results for '{query}':\n" + "\n".join(summary_lines)
+    summary_lines = [f"- {r.get('title', 'Result')}: {r.get('body', '')[:200]}" for r in top_results[:4]]
+    output_text = f"Key Findings for '{query}':\n" + "\n".join(summary_lines)
     if crawled_excerpts:
-        output_text += "\n\nKey Page Excerpts:\n" + "\n---\n".join(crawled_excerpts)
+        output_text += "\n" + "\n".join(crawled_excerpts)
 
     db.increment_stats(session_id, searches_performed=1, sources_found=len(top_results), pages_crawled=len(crawled_excerpts))
-    return output_text, sources
+    return output_text[:1000], sources
 
 
 def _execute_context_step(
@@ -233,7 +233,7 @@ def _execute_context_step(
     if context_manager:
         system_context, chunks_used = context_manager.build_system_context(query, session_id=session_id)
         if chunks_used:
-            return f"Retrieved context chunks ({', '.join(chunks_used)}):\n{system_context[:1000]}", []
+            return f"Retrieved context chunks ({', '.join(chunks_used)}):\n{system_context[:600]}", []
     return "No additional workspace context found.", []
 
 
@@ -259,7 +259,7 @@ def _execute_memory_step(
             matching.append(f"[{m.get('category', 'fact')}] {m.get('key')}: {m.get('content')}")
 
     if matching:
-        return "Relevant Second Brain Memories:\n" + "\n".join(matching[:5]), []
+        return "Relevant Second Brain Memories:\n" + "\n".join(matching[:4]), []
     return "No matching memories found for query.", []
 
 
@@ -276,17 +276,18 @@ def _execute_reason_step(
     elif isinstance(tool_input, str):
         focus = tool_input
 
-    prompt = f"Focus / Analysis Target: {focus}\n\nEvidence & Information Collected So Far:\n{gathered_context}\n\nPlease synthesize a concise analytical summary addressing the focus target."
+    context_tail = gathered_context[-1200:] if len(gathered_context) > 1200 else gathered_context
+    prompt = f"Focus / Analysis Target: {focus}\n\nEvidence & Information Collected So Far:\n{context_tail}\n\nPlease synthesize a concise analytical summary addressing the focus target."
     messages = [
         {"role": "system", "content": "You are a concise analytical reasoning assistant."},
         {"role": "user", "content": prompt},
     ]
 
     try:
-        res = llm_client.chat(model, messages, temperature=config.STREAM_TEMP, max_tokens=500)
+        res = llm_client.chat(model, messages, temperature=config.STREAM_TEMP, max_tokens=400)
         return res.strip(), []
     except Exception as e:
-        return f"Reasoning analysis completed with notes on: {focus}", []
+        return f"Reasoning analysis completed on: {focus}", []
 
 
 def execute_agent_task(
@@ -298,10 +299,10 @@ def execute_agent_task(
     system_context: str = "",
     step_callback: Optional[Callable[[str, str], None]] = None,
     stop_checker: Optional[Callable[[], bool]] = None,
-) -> Tuple[Optional[str], List[dict], List[dict]]:
+) -> Tuple[Optional[str], List[dict], List[str], List[dict]]:
     """
     Main entry point for Agent Mode execution.
-    Returns: (cancel_message, accumulated_sources, synthesis_messages)
+    Returns: (cancel_message, accumulated_sources, collected_evidence, synthesis_messages)
     """
     def is_stopped() -> bool:
         return stop_checker() if stop_checker else False
@@ -311,7 +312,7 @@ def execute_agent_task(
             step_callback(title, status)
 
     if is_stopped():
-        return "⏹️ Agent execution cancelled.", [], []
+        return "⏹️ Agent execution cancelled.", [], [], []
 
     # Fast-path for conversational greetings / smalltalk
     if is_conversational_goal(goal):
@@ -322,7 +323,7 @@ def execute_agent_task(
             {"role": "system", "content": (system_context + "\n\n" if system_context else "") + AGENT_CONVERSATIONAL_SYSTEM_PROMPT},
             {"role": "user", "content": goal},
         ]
-        return None, [], messages
+        return None, [], [], messages
 
     # 1. Check for existing pending task or create new one
     task = db.get_latest_agent_task(session_id)
@@ -346,7 +347,7 @@ def execute_agent_task(
     for step in steps:
         if is_stopped():
             db.update_agent_task_status(task_id, "cancelled")
-            return "⏹️ Agent execution stopped by user.", accumulated_sources, []
+            return "⏹️ Agent execution stopped by user.", accumulated_sources, collected_evidence, []
 
         step_id = step["id"]
         step_title = step.get("title", "Executing step")
@@ -402,13 +403,13 @@ def execute_agent_task(
 
     if is_stopped():
         db.update_agent_task_status(task_id, "cancelled")
-        return "⏹️ Agent execution stopped by user.", accumulated_sources, []
+        return "⏹️ Agent execution stopped by user.", accumulated_sources, collected_evidence, []
 
     db.update_agent_task_status(task_id, "completed")
     emit_step("Synthesizing comprehensive final answer...", "running")
 
-    # 3. Build Final Synthesis Messages
-    evidence_block = "\n\n".join(collected_evidence)
+    # 3. Build Final Synthesis Messages with capped context
+    evidence_block = "\n\n".join([e[:800] for e in collected_evidence])
     user_synthesis_content = f"""Goal: {goal}
 
 Plan & Execution Evidence:
@@ -421,4 +422,4 @@ Please provide the final comprehensive, well-structured response based on the co
         {"role": "user", "content": user_synthesis_content},
     ]
 
-    return None, accumulated_sources, messages
+    return None, accumulated_sources, collected_evidence, messages

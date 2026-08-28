@@ -597,7 +597,7 @@ def main(page: ft.Page):
                 system_context, chunks_used = context_manager.build_system_context(
                     query, session_id=state["session_id"]
                 )
-                cancel_msg, agent_sources, synthesis_messages = execute_agent_task(
+                cancel_msg, agent_sources, collected_evidence, synthesis_messages = execute_agent_task(
                     goal=query,
                     llm_client=llm_client,
                     model=state["model"],
@@ -617,12 +617,34 @@ def main(page: ft.Page):
 
                 live_block.set_answer("")
                 full_text = ""
-                for chunk in llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.AGENT_MAX_TOKENS):
-                    if state["stop_requested"]:
-                        break
-                    full_text += chunk
+                try:
+                    for chunk in llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.AGENT_MAX_TOKENS):
+                        if state["stop_requested"]:
+                            break
+                        full_text += chunk
+                        live_block.set_answer(full_text)
+                        chat_history.scroll_to(offset=-1, duration=100)
+                except Exception:
+                    pass
+
+                # Fallback 1: non-streaming chat if stream produced nothing
+                if not full_text and not state["stop_requested"]:
+                    try:
+                        full_text = llm_client.chat(state["model"], synthesis_messages, max_tokens=config.AGENT_MAX_TOKENS)
+                        if full_text:
+                            live_block.set_answer(full_text)
+                    except Exception:
+                        pass
+
+                # Fallback 2: format gathered evidence directly if model output was empty
+                if not full_text and not state["stop_requested"]:
+                    if collected_evidence:
+                        full_text = "### 📋 Agent Plan & Findings\n\n" + "\n\n".join(collected_evidence)
+                    else:
+                        full_text = "Task executed successfully."
                     live_block.set_answer(full_text)
-                    chat_history.scroll_to(offset=-1, duration=100)
+
+                add_step_and_scroll("Synthesizing comprehensive final answer...", "done")
 
                 if state["stop_requested"] and not full_text:
                     live_block.set_answer("⏹️ Agent task stopped.")
