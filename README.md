@@ -16,34 +16,36 @@ This project was developed as part of the **[DBert Internship Program](https://d
 
 ## ✨ Features
 
-- 🧠 **Local LLM Integration** — Connects to [LM Studio](https://lmstudio.ai/) for fully offline, privacy-first AI conversations
-- 🔬 **Autonomous Deep Research Mode** — Multi-hop inquiry with iterative query decomposition, evidence gap analysis, and auto-export to markdown dossiers
-- 🧬 **Persistent Long-Term Memory (Second Brain)** — Background user trait/preference learning and dedicated Memory Vault with semantic context injection
-- 🌐 **Web Search Grounding** — Automatically searches the web to give up-to-date, source-backed answers
-- 🔗 **URL Crawling** — Paste a URL and Gayatri AI reads the entire website to answer questions about it
-- 📄 **Context Files (RAG)** — Attach Markdown files as long-term or per-session context documents
-- 💬 **Multi-Session Chat History** — Persistent chat sessions stored in a local SQLite database
-- 🎨 **Dark / Light Theme** — Smooth animated theme switching with Terracotta & Indigo Slate design system
-- 📱 **Responsive Layout** — Auto-adapts sidebar and padding to any window size
-- ⚡ **Live Streaming Responses** — Real-time token streaming with step-by-step progress indicators
-- 🔍 **Smart Search Modes** — Auto, Deep Research 🔬, Force Web, URL Only, or Search Off
-- 📊 **Session Statistics** — Tracks keywords generated, searches performed, and sources found
+- 🤖 **Autonomous Agent Mode** — Break down complex, high-level goals into multi-step action plans, dispatch specialized tools (`web_search`, `read_context`, `memory_lookup`, `reason`), track progress live, and persist task states in SQLite
+- 🔬 **Autonomous Deep Research Mode** — Multi-hop inquiry with iterative query decomposition, evidence gap analysis, source verification, and auto-export to structured Markdown dossiers
+- 🧬 **Persistent Long-Term Memory (Second Brain)** — Background extraction of user preferences, constraints, and facts with confidence scoring and an interactive Memory Vault UI modal
+- 🧠 **Local LLM Integration** — Connects to [LM Studio](https://lmstudio.ai/) for 100% offline, privacy-first AI conversations with dynamic model discovery and streaming
+- 🌐 **Web Search Grounding** — Live DuckDuckGo search with hybrid relevance scoring (Semantic Embeddings via `all-MiniLM-L6-v2` + TF-IDF)
+- 🔗 **URL Crawling & Deep Scrape** — Concurrently crawls and extracts content from pasted URLs and internal links
+- 📄 **Markdown-Driven RAG & Context Files** — Workspace-based context system (`workspace/`) with guardrail documents (`system_rules.md`, `project_context.md`, `brand_voice.md`)
+- 💬 **Multi-Session Chat History** — Persistent chat sessions stored in a local SQLite database with renaming, search, and deletion
+- 🎨 **Terracotta & Deep Indigo Design** — Bespoke modern Flet UI with dynamic Dark / Light theme switching and high-contrast styling
+- 📱 **Responsive Desktop Layout** — Collapsible sidebar, stats dock, and adaptive padding for any screen resolution
+- ⚡ **Live Streaming Responses** — Real-time token streaming with multi-tier fallback resilience and step-by-step execution indicators
+- 🔍 **6 Intelligent Modes** — Auto, Agent Mode 🤖, Deep Research 🔬, Web Search, URL Only, or Search Off
+- 📊 **Session Statistics & Diagnostics** — Tracks query keywords, searches performed, and sources discovered; includes built-in connectivity diagnostic suite
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer | Technology |
-|---|---|
-| UI Framework | [Flet](https://flet.dev/) (Flutter-powered Python UI) |
-| LLM Backend | [LM Studio](https://lmstudio.ai/) (OpenAI-compatible API) |
-| Default Model | Qwen 2.5 7B |
-| Database | SQLite (via `db.py`) |
-| Web Search | DuckDuckGo / multi-source search engine |
-| Context / RAG | Custom embedding + chunk ranking (`context_manager.py`) |
-| Deep Research | Multi-hop planner & gap analyzer (`deep_research.py`) |
-| Second Brain | Long-term memory extraction & retrieval (`memory_manager.py`) |
-| Language | Python 3.10+ |
+| Layer | Technology | Description |
+|---|---|---|
+| UI Framework | [Flet](https://flet.dev/) | Flutter-powered Python desktop UI |
+| LLM Backend | [LM Studio](https://lmstudio.ai/) | Local OpenAI-compatible inference server |
+| Default Model | Qwen 2.5 7B / Auto-detected | High-performance local reasoning model |
+| Agent Engine | `agent.py` | Multi-step task planner, tool dispatcher & SQLite execution tracker |
+| Deep Research | `deep_research.py` | Multi-hop search planner, gap analyzer & dossier synthesizer |
+| Second Brain | `memory_manager.py` | Background memory extractor & semantic retrieval engine |
+| Context / RAG | `context_manager.py` | Sentence-Transformers (`all-MiniLM-L6-v2`) + TF-IDF chunk ranking |
+| Web Search & Scraping | `search_engine.py` | DuckDuckGo search + multi-threaded concurrent web crawler |
+| Database Layer | `db.py` | Local SQLite database for sessions, messages, memories, and agent tasks |
+| Language | Python 3.10+ | Clean, modular asynchronous architecture |
 
 ---
 
@@ -68,7 +70,9 @@ pip install -r requirements.txt
 python main.py
 ```
 
-> ⚠️ Make sure LM Studio is running on `http://localhost:1234` (default) before launching.
+> 💡 **Windows Quick Start:** You can also launch Gayatri AI by double-clicking `run_gayatri_ai.bat`.
+> 
+> ⚠️ Make sure LM Studio local server is running on `http://localhost:1234` (default) before launching.
 
 ---
 
@@ -76,17 +80,20 @@ python main.py
 
 ```
 Gayatri-AI/
-├── main.py              # App entrypoint — wires all modules together
-├── config.py            # App-wide configuration and theme definitions
-├── ui_components.py     # All Flet UI widgets and components
-├── llm_client.py        # LM Studio API client with streaming support
-├── search_engine.py     # Web search, URL crawling, and grounded context builder
+├── main.py              # App entrypoint — UI orchestration and event routing
+├── agent.py             # Autonomous Agent Mode (goal decomposition & tool dispatching)
+├── config.py            # App-wide configuration, search parameters, and theme tokens
+├── ui_components.py     # Reusable Flet widgets, Memory Vault modal, and theme styling
+├── llm_client.py        # LM Studio API client with streaming and fallback support
+├── search_engine.py     # Web search, URL crawler, and hybrid relevance ranker
 ├── deep_research.py     # Multi-hop inquiry, gap analysis, and dossier synthesizer
-├── memory_manager.py    # Long-term memory extractor & semantic retrieval engine
-├── context_manager.py   # RAG context file manager with embedding + ranking
-├── db.py                # SQLite database layer for sessions, messages, and memories
-├── diagnostic_test.py   # Connectivity and system diagnostics
-├── requirements.txt     # Python dependencies
+├── memory_manager.py    # Long-term memory extraction & semantic retrieval engine
+├── context_manager.py   # Workspace RAG file manager with embedding + ranking
+├── db.py                # SQLite database layer for sessions, memories, and agent tasks
+├── diagnostic_test.py   # Connectivity and search diagnostic suite
+├── run_gayatri_ai.bat   # Windows batch launcher script
+├── requirements.txt     # Python package dependencies
+├── workspace/           # Markdown context files & active system guardrails
 ├── exports/             # Exported research dossiers and chat transcripts
 └── gayatri.db           # Local SQLite database (auto-created on first run)
 ```
@@ -95,29 +102,34 @@ Gayatri-AI/
 
 ## ⚙️ Configuration
 
-Key settings live in `config.py` and can also be changed via the in-app Settings dialog:
+Key settings live in `config.py` and can also be adjusted via the in-app Settings dialog:
 
 | Setting | Default | Description |
 |---|---|---|
-| `LM_STUDIO_BASE_URL` | `http://localhost:1234` | LM Studio server URL |
-| `DEFAULT_MODEL` | `qwen2.5-7b` | Default LLM model ID |
-| `SEARCH_RESULTS_PER_QUERY` | `6` | Number of web results per search |
-| `MAX_MD_TOKENS` | `1200` | Max context token budget |
+| `LMSTUDIO_BASE_URL` | `http://127.0.0.1:1234/v1` | LM Studio server API base URL |
+| `DEFAULT_MODEL` | Auto-detected | Default LLM model ID (discovered from `/v1/models`) |
+| `AGENT_MAX_STEPS` | `6` | Maximum steps in an autonomous agent execution plan |
+| `AGENT_MAX_TOKENS` | `2500` | Max output token budget for agent result synthesis |
 | `MAX_RESEARCH_HOPS` | `2` | Max multi-hop research exploration loops |
-| `ENABLE_LONG_TERM_MEMORY`| `True` | Persistent memory & Second Brain active |
-| `SIDEBAR_WIDTH` | `280` | Sidebar width in pixels |
+| `MAX_SUB_QUERIES` | `3` | Max sub-questions decomposed per research hop |
+| `ENABLE_LONG_TERM_MEMORY` | `True` | Persistent memory & Second Brain active |
+| `MAX_MEMORY_ITEMS_IN_PROMPT` | `6` | Maximum relevant memories injected per conversation turn |
+| `SEARCH_RESULTS_PER_QUERY` | `6` | Number of web results per DuckDuckGo search |
+| `MAX_MD_TOKENS` | `1200` | Max context token budget for workspace RAG files |
+| `SIDEBAR_WIDTH` | `280` | Collapsible sidebar width in pixels |
 
 ---
 
-## 🔍 Search Modes
+## 🔍 Modes & Execution Strategies
 
-| Mode | Behavior |
-|---|---|
-| **Auto** | AI decides whether a web search is needed |
-| **Deep Research 🔬** | Multi-hop autonomous inquiry, gap analysis & comprehensive dossier synthesis |
-| **Web Search** | Always searches the web before responding |
-| **URL Only** | Only crawls URLs pasted in the query |
-| **Search Off** | Pure local LLM — no internet access |
+| Mode | Badge | Description |
+|---|---|---|
+| **Auto** | `Auto` | AI automatically decides whether web search or context retrieval is needed |
+| **Agent Mode** | `Agent 🤖` | Full autonomous execution: plans multi-step strategy, runs tools (`web_search`, `read_context`, `memory_lookup`, `reason`), and streams comprehensive solutions |
+| **Deep Research** | `Deep Research 🔬` | Multi-hop autonomous inquiry: recursively analyzes evidence gaps, gathers cross-source data, and synthesizes structured research dossiers |
+| **Web Search** | `Web Search` | Forces DuckDuckGo search and source synthesis on every query |
+| **URL Only** | `URL Only` | Directly crawls and summarizes specific URLs provided in your prompt |
+| **Search Off** | `Search Off` | Pure offline local LLM generation with zero internet access |
 
 ---
 
