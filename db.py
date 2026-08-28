@@ -82,10 +82,35 @@ def init_db() -> None:
             FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS agent_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            goal TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_steps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            step_index INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            tool_input TEXT NOT NULL DEFAULT '{}',
+            tool_output TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES agent_tasks(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_session_context_files_session_id ON session_context_files(session_id);
         CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key);
         CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+        CREATE INDEX IF NOT EXISTS idx_agent_tasks_session_id ON agent_tasks(session_id);
+        CREATE INDEX IF NOT EXISTS idx_agent_steps_task_id ON agent_steps(task_id);
         """
     )
     conn.commit()
@@ -426,4 +451,99 @@ def clear_all_memories() -> None:
 def count_memories() -> int:
     conn = get_connection()
     row = conn.execute("SELECT COUNT(*) as cnt FROM memories").fetchone()
-    return row["cnt"] if row else 0
+    return row["cnt"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Agent Tasks & Steps Persistence
+# ---------------------------------------------------------------------------
+def create_agent_task(session_id: int, goal: str) -> int:
+    """Creates a new agent task record."""
+    conn = get_connection()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO agent_tasks (session_id, goal, status, created_at, updated_at) VALUES (?, ?, 'pending', ?, ?)",
+        (session_id, goal.strip(), now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_agent_task(task_id: int) -> dict | None:
+    """Retrieves an agent task by ID."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_agent_task(session_id: int) -> dict | None:
+    """Retrieves the most recent agent task for a session."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM agent_tasks WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_agent_task_status(task_id: int, status: str) -> None:
+    """Updates the status of an agent task."""
+    conn = get_connection()
+    now = _now()
+    conn.execute(
+        "UPDATE agent_tasks SET status = ?, updated_at = ? WHERE id = ?",
+        (status, now, task_id),
+    )
+    conn.commit()
+
+
+def create_agent_steps(task_id: int, steps: list[dict]) -> list[int]:
+    """Persists a list of plan steps for an agent task."""
+    conn = get_connection()
+    now = _now()
+    step_ids = []
+    for idx, s in enumerate(steps):
+        tool_input_str = s.get("tool_input", "")
+        if isinstance(tool_input_str, (dict, list)):
+            tool_input_str = json.dumps(tool_input_str)
+        elif not isinstance(tool_input_str, str):
+            tool_input_str = str(tool_input_str)
+
+        cur = conn.execute(
+            """
+            INSERT INTO agent_steps (task_id, step_index, title, tool, tool_input, tool_output, status, updated_at)
+            VALUES (?, ?, ?, ?, ?, '', 'pending', ?)
+            """,
+            (task_id, idx, s.get("title", f"Step {idx + 1}"), s.get("tool", "reason"), tool_input_str, now),
+        )
+        step_ids.append(cur.lastrowid)
+    conn.commit()
+    return step_ids
+
+
+def get_agent_steps(task_id: int) -> list[dict]:
+    """Retrieves all steps for an agent task ordered by step_index."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM agent_steps WHERE task_id = ? ORDER BY step_index ASC",
+        (task_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_agent_step(step_id: int, status: str, tool_output: str = None) -> None:
+    """Updates status and optionally tool output for an agent step."""
+    conn = get_connection()
+    now = _now()
+    if tool_output is not None:
+        conn.execute(
+            "UPDATE agent_steps SET status = ?, tool_output = ?, updated_at = ? WHERE id = ?",
+            (status, tool_output, now, step_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE agent_steps SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now, step_id),
+        )
+    conn.commit()
+

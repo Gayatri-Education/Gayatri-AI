@@ -19,6 +19,7 @@ from search_engine import (
     choose_length, build_grounded_messages, extract_urls,
 )
 from deep_research import execute_deep_research, export_research_report
+from agent import execute_agent_task
 from context_manager import ContextManager, summarize_history
 
 
@@ -589,6 +590,60 @@ def main(page: ft.Page):
                 chat_history.scroll_to(offset=-1, duration=200)
 
                 db.add_message(state["session_id"], "assistant", full_text, sources=deep_sources, md_chunks_used=chunks_used)
+                return
+
+            # AGENT MODE EXECUTION
+            if state["search_mode"] == config.SEARCH_MODE_AGENT:
+                system_context, chunks_used = context_manager.build_system_context(
+                    query, session_id=state["session_id"]
+                )
+                cancel_msg, agent_sources, synthesis_messages = execute_agent_task(
+                    goal=query,
+                    llm_client=llm_client,
+                    model=state["model"],
+                    session_id=state["session_id"],
+                    context_manager=context_manager,
+                    system_context=system_context,
+                    step_callback=add_step_and_scroll,
+                    stop_checker=lambda: state["stop_requested"],
+                )
+
+                if state["stop_requested"] or cancel_msg:
+                    live_block.set_answer(cancel_msg or "⏹️ Agent task cancelled.")
+                    return
+
+                if agent_sources:
+                    live_block.set_sources(agent_sources)
+
+                live_block.set_answer("")
+                full_text = ""
+                for chunk in llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.AGENT_MAX_TOKENS):
+                    if state["stop_requested"]:
+                        break
+                    full_text += chunk
+                    live_block.set_answer(full_text)
+                    chat_history.scroll_to(offset=-1, duration=100)
+
+                if state["stop_requested"] and not full_text:
+                    live_block.set_answer("⏹️ Agent task stopped.")
+                    return
+
+                from agent import is_conversational_goal
+                if is_conversational_goal(query):
+                    related_questions = [
+                        "Research the best open-source AI models for laptops",
+                        "Analyze our project structure and suggest improvements",
+                        "Compare React vs Vue for desktop web apps",
+                    ]
+                else:
+                    related_questions = [
+                        f"Would you like to execute a follow-up action for {query[:25]}?",
+                        "Save key takeaways to Second Brain Memory Vault",
+                    ]
+                live_block.finalize(full_text, related_questions=related_questions, on_related_click=handle_send)
+                chat_history.scroll_to(offset=-1, duration=200)
+
+                db.add_message(state["session_id"], "assistant", full_text, sources=agent_sources, md_chunks_used=chunks_used)
                 return
 
             do_url_crawl = False
