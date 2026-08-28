@@ -3,6 +3,17 @@ search_engine.py — Gayatri AI v5.0
 Ported from legacy gayatri_ai.py. Behavior preserved: search gating,
 keyword generation, TF-IDF + SBERT hybrid scoring, page cleaning/chunking,
 crawling. Only the LLM backend changed (Ollama -> LM Studio via llm_client.py).
+
+FIXES APPLIED (see review notes):
+  1. heuristic_gate: time-sensitive/verify patterns are now checked BEFORE
+     the conversational short-circuit, so queries like "help me check the
+     current bitcoin price" are no longer swallowed by the "help" prefix
+     match and starved of a search.
+  2. multi_search_enhanced: early-exit (cap reached / stop_checker fired)
+     now shuts the pool down without waiting on in-flight futures, so a
+     slow keyword search can no longer stall an already-satisfied result.
+  3. _build_pagedoc: decode before truncating raw bytes to avoid silently
+     mangling a multi-byte UTF-8 character at the truncation boundary.
 """
 
 import re
@@ -251,9 +262,23 @@ class PageDoc:
 def _build_pagedoc(url: str, resp: requests.Response) -> PageDoc:
     """Builds a PageDoc from an already-fetched response, so callers that
     already hold a response (e.g. crawl_site's root page) don't need to
-    issue a second HTTP GET for the same URL."""
-    raw = truncate_bytes(resp.content)
-    html = raw.decode(resp.encoding or "utf-8", errors="ignore")
+    issue a second HTTP GET for the same URL.
+
+    NOTE: we decode the FULL response body first and only then truncate the
+    resulting *text* to MAX_BYTES-worth of characters. Truncating the raw
+    bytes before decoding risks slicing through a multi-byte UTF-8 sequence,
+    which `errors="ignore"` would then silently drop/garble rather than
+    raise on — cutting a character (or word) off the tail of the page.
+    """
+    encoding = resp.encoding or "utf-8"
+    html = resp.content.decode(encoding, errors="ignore")
+    max_bytes = config.MAX_BYTES
+    if len(html.encode(encoding, errors="ignore")) > max_bytes:
+        # Trim on a per-character basis until we're back under the byte cap.
+        # Simpler and safer than re-slicing raw bytes.
+        while len(html.encode(encoding, errors="ignore")) > max_bytes and html:
+            html = html[:-1]
+
     title = ""
     try:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
@@ -353,14 +378,20 @@ _CONVERSATIONAL_PATTERNS = re.compile(
 
 
 def heuristic_gate(query: str) -> tuple[bool, float, str, str]:
-    """Fast keyword/pattern-based decision. Returns (decision, confidence, reason, category)."""
+    """Fast keyword/pattern-based decision. Returns (decision, confidence, reason, category).
+
+    FIX: time-sensitive and verify checks now run BEFORE the conversational
+    short-circuit. Previously a query like "help me check the current
+    bitcoin price" or "hey, what's the weather right now" matched the
+    leading "help"/"hey" alternative in _CONVERSATIONAL_PATTERNS and
+    returned confidence 0.95 for a NO-search decision — well above
+    GATE_CONFIDENCE_THRESHOLD — so it never fell through to the
+    time-sensitive check or the LLM fallback gate. Time-sensitive/verify
+    intent now always wins over a conversational-looking prefix.
+    """
     urls = extract_urls(query)
     if urls:
         return True, 1.0, "Query contains a URL", "url"
-
-    q_strip = query.strip()
-    if _CONVERSATIONAL_PATTERNS.match(q_strip):
-        return False, 0.95, "Conversational pattern detected", "static"
 
     if _TIME_SENSITIVE_PATTERNS.search(query):
         return True, 0.95, "Time-sensitive or current-events pattern detected", "time_sensitive"
@@ -368,12 +399,16 @@ def heuristic_gate(query: str) -> tuple[bool, float, str, str]:
     if _VERIFY_PATTERNS.search(query):
         return True, 0.90, "Verification/fact-check pattern detected", "verify"
 
-    if _STATIC_PATTERNS.search(query) and not _TIME_SENSITIVE_PATTERNS.search(query):
+    q_strip = query.strip()
+    if _CONVERSATIONAL_PATTERNS.match(q_strip):
+        return False, 0.95, "Conversational pattern detected", "static"
+
+    if _STATIC_PATTERNS.search(query):
         return False, 0.92, "Static/explanatory query pattern detected", "static"
 
     # Default heuristic for general reasoning & general queries
     words = q_strip.split()
-    if len(words) >= 4 and not _TIME_SENSITIVE_PATTERNS.search(query):
+    if len(words) >= 4:
         return False, 0.86, "General knowledge / reasoning pattern", "static"
 
     return False, 0.5, "No strong heuristic signal", "unclear"
@@ -504,7 +539,17 @@ def duck_search(query: str, max_results: int = None) -> list[dict]:
 
 
 def multi_search_enhanced(keywords: list[str], max_sources: int = None, stop_checker=None) -> list[dict]:
-    """Search across multiple keyword variants in parallel, dedupe by domain, cap at MAX_SOURCES."""
+    """Search across multiple keyword variants in parallel, dedupe by domain, cap at MAX_SOURCES.
+
+    FIX: previously the cap-reached / stop_checker-triggered `return` happened
+    inside the `with ThreadPoolExecutor(...) as pool:` block. `__exit__` calls
+    `shutdown(wait=True)`, which blocks until every submitted future finishes —
+    so a single slow keyword search could stall the "early" return for as long
+    as it took to complete, even though the desired results (or stop signal)
+    already arrived. We now shut the pool down explicitly with
+    `cancel_futures=True` and `wait=False` before returning, and only rely on
+    the `with` block's own shutdown for the normal (all-futures-completed) path.
+    """
     cap = max_sources if max_sources is not None else config.MAX_SOURCES
     seen_domains = set()
     sources = []
@@ -514,11 +559,13 @@ def multi_search_enhanced(keywords: list[str], max_sources: int = None, stop_che
 
     # Parallelize web searches across up to 3 keywords
     kw_to_search = keywords[:3]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(kw_to_search))) as pool:
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(kw_to_search)))
+    try:
         future_map = {pool.submit(duck_search, kw): kw for kw in kw_to_search}
         for future in concurrent.futures.as_completed(future_map):
             if stop_checker and stop_checker():
-                break
+                pool.shutdown(wait=False, cancel_futures=True)
+                return sources
             try:
                 results = future.result()
                 for r in results:
@@ -532,9 +579,12 @@ def multi_search_enhanced(keywords: list[str], max_sources: int = None, stop_che
                     seen_domains.add(domain_key)
                     sources.append(r)
                     if len(sources) >= cap:
+                        pool.shutdown(wait=False, cancel_futures=True)
                         return sources
             except Exception:
                 continue
+    finally:
+        pool.shutdown(wait=True)
 
     return sources
 
