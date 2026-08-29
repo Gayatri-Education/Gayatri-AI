@@ -87,7 +87,7 @@ def empty_state(on_suggestion_click=None) -> ft.Container:
         for s in suggestions
     ]
 
-    return ft.Container(
+    res = ft.Container(
         content=ft.Column(
             [
                 # Warm Terracotta Glowing Orb
@@ -139,7 +139,10 @@ def empty_state(on_suggestion_click=None) -> ft.Container:
         alignment=ft.alignment.center,
         expand=True,
         padding=40,
+        data="empty_state",
     )
+    res._is_empty_state = True
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +152,11 @@ def user_bubble(content: str) -> ft.Container:
     return ft.Container(
         content=ft.Text(
             content,
-            size=14.5,
+            size=14,
             color="#FFFFFF",
             font_family=config.FONT_FAMILY,
             selectable=True,
+            no_wrap=False,
         ),
         padding=ft.padding.symmetric(horizontal=18, vertical=12),
         border_radius=ft.border_radius.only(
@@ -171,10 +175,8 @@ def user_bubble(content: str) -> ft.Container:
             offset=ft.Offset(0, 2),
             color=ft.Colors.with_opacity(0.25, T["accent_primary"]),
         ),
-        alignment=ft.alignment.center_right,
-        margin=ft.margin.only(left=80, top=8, bottom=8),
+        margin=ft.margin.only(left=80, top=6, bottom=6, right=0),
         animate_opacity=200,
-        animate_scale=200,
     )
 
 
@@ -187,6 +189,7 @@ def ai_bubble(content: str, streaming: bool = False) -> ft.Row:
             size=14,
             font_family=config.FONT_FAMILY,
             selectable=True,
+            no_wrap=False,
         ),
         padding=ft.padding.symmetric(horizontal=16, vertical=12),
         border_radius=config.BORDER_RADIUS,
@@ -509,7 +512,7 @@ def ai_message_block(text: str, sources: list[dict] = None, keywords: list[str] 
             offset=ft.Offset(0, 1),
             color=ft.Colors.with_opacity(0.08, "#000000"),
         ),
-        margin=ft.margin.only(top=6, bottom=12, right=30),
+        margin=ft.margin.only(top=6, bottom=12, right=0),
         alignment=ft.alignment.center_left,
         animate_opacity=200,
     )
@@ -530,7 +533,7 @@ class LiveResponseBlock(ft.Container):
                 offset=ft.Offset(0, 1),
                 color=ft.Colors.with_opacity(0.08, "#000000"),
             ),
-            margin=ft.margin.only(top=6, bottom=12, right=30),
+            margin=ft.margin.only(top=6, bottom=12, right=0),
             alignment=ft.alignment.center_left,
             animate_opacity=200,
         )
@@ -549,7 +552,7 @@ class LiveResponseBlock(ft.Container):
         )
         self.sources_strip_holder = ft.Container(visible=False)
 
-        # 2. Steps Panel (loading indicator/spins, visible immediately)
+        # 2. Steps Panel (loading indicator/spins, visible ONLY when steps exist)
         self.steps_list = ft.Column(spacing=6)
         self.steps_tile = ft.ExpansionTile(
             title=ft.Row(
@@ -570,7 +573,7 @@ class LiveResponseBlock(ft.Container):
             shape=ft.RoundedRectangleBorder(radius=config.BORDER_RADIUS),
             collapsed_shape=ft.RoundedRectangleBorder(radius=config.BORDER_RADIUS),
             initially_expanded=True,
-            visible=True,
+            visible=False,
             icon_color=T["text_secondary"],
             collapsed_icon_color=T["text_secondary"],
         )
@@ -608,6 +611,7 @@ class LiveResponseBlock(ft.Container):
         )
 
     def add_step(self, text: str, status: str = "running"):
+        self.steps_tile.visible = True
         found = False
         for c in self.steps_list.controls:
             if isinstance(c, ft.Row) and len(c.controls) > 1 and c.controls[1].value == text:
@@ -1138,7 +1142,7 @@ def memory_vault_dialog(memories: list, on_add_memory, on_delete_memory, on_clea
 # ---------------------------------------------------------------------------
 # Sidebar action buttons
 # ---------------------------------------------------------------------------
-def sidebar_action_button(label: str, icon, on_click, primary: bool = False, badge_text: str = None) -> ft.Container:
+def sidebar_action_button(label: str, icon, on_click, primary: bool = False, badge_text: str = None, expand: bool = False) -> ft.Container:
     if primary:
         return ft.Container(
             content=ft.Row(
@@ -1159,7 +1163,7 @@ def sidebar_action_button(label: str, icon, on_click, primary: bool = False, bad
             ),
             ink=True,
             on_click=on_click,
-            width=230,
+            expand=expand,
             animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
         )
 
@@ -1190,7 +1194,7 @@ def sidebar_action_button(label: str, icon, on_click, primary: bool = False, bad
         border=ft.border.all(1, T["border"]),
         ink=True,
         on_click=on_click,
-        width=230,
+        expand=expand,
     )
 
 
@@ -1288,21 +1292,23 @@ def build_sidebar(session_items: list, context_rows: list, session_file_rows: li
 
     footer = ft.Row(
         [
-            sidebar_action_button("Settings", ft.Icons.SETTINGS_OUTLINED, on_open_settings),
+            sidebar_action_button("Settings", ft.Icons.SETTINGS_OUTLINED, on_open_settings, expand=True),
             ft.IconButton(
                 icon=ft.Icons.LIGHT_MODE_ROUNDED if _current_theme.get("bg") == config.THEME_DARK["bg"] else ft.Icons.DARK_MODE_ROUNDED,
                 icon_color=T["text_primary"],
-                icon_size=16,
+                icon_size=18,
                 on_click=on_toggle_theme,
                 tooltip="Switch Theme Mode",
             ),
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        spacing=8,
     )
 
     recent_section = section(
         "recent", "THREADS",
-        [ft.Column(session_items if session_items else [ft.Text("No chats yet.", size=11, color=T["text_secondary"], italic=True)], spacing=4, scroll=ft.ScrollMode.AUTO, height=150)],
+        session_items if session_items else [ft.Text("No chats yet.", size=11, color=T["text_secondary"], italic=True)],
         default_open=True,
     )
     context_section = section("context", "CONTEXT CENTER", context_rows, default_open=False)

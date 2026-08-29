@@ -160,6 +160,20 @@ def export_research_report(query: str, report_content: str, sources: List[Dict[s
     return file_path
 
 
+DEEP_RESEARCH_CONVERSATIONAL_SYSTEM_PROMPT = """You are Gayatri AI in Deep Research Mode 🔬.
+The user sent a greeting or casual chat query.
+Greet the user warmly in a modern, professional tone.
+Explain clearly that in Deep Research Mode, you perform iterative multi-hop web search, deep page crawling, gap analysis, and generate comprehensive research dossiers with source citations.
+Give 3 exciting research topic suggestions they can explore.
+"""
+
+
+_CONVERSATIONAL_RESEARCH_PATTERN = re.compile(
+    r"^(hi|hello|hey|greetings|good (?:morning|afternoon|evening)|who are you|what can you do|how are you|thanks|thank you|ok|okay|bye|help|test|ping|howdy)\b",
+    re.IGNORECASE,
+)
+
+
 def execute_deep_research(
     query: str,
     llm_client: LLMClient,
@@ -167,7 +181,7 @@ def execute_deep_research(
     system_context: str = "",
     step_callback: Callable[[str, str], None] = None,
     stop_checker: Callable[[], bool] = None,
-) -> Tuple[str, List[Dict[str, Any]], List[str], str]:
+) -> Tuple[str, List[Dict[str, Any]], List[str], Any]:
     """
     Autonomous multi-hop deep research workflow:
     1. Query Decomposition
@@ -183,6 +197,17 @@ def execute_deep_research(
 
     def is_stopped() -> bool:
         return bool(stop_checker and stop_checker())
+
+    if is_stopped():
+        return "⏹️ Research cancelled.", [], [], ""
+
+    q_strip = query.strip()
+    if _CONVERSATIONAL_RESEARCH_PATTERN.match(q_strip) or len(q_strip.split()) <= 2 and q_strip.lower() in {"hi", "hello", "hey", "test", "ping"}:
+        messages = [
+            {"role": "system", "content": f"{DEEP_RESEARCH_CONVERSATIONAL_SYSTEM_PROMPT}\n\n{system_context}".strip()},
+            {"role": "user", "content": query},
+        ]
+        return "", [], [], messages
 
     all_sources: List[Dict[str, Any]] = []
     page_docs: List[str] = []
