@@ -322,8 +322,10 @@ def gather_internal(base_url: str, html: str, max_links: int = None) -> list[str
     return links
 
 
-def crawl_site(start_url: str, max_pages: int = None) -> list[PageDoc]:
+def crawl_site(start_url: str, max_pages: int = None, stop_checker=None) -> list[PageDoc]:
     """Crawl start_url plus same-domain internal links, threaded fetch."""
+    if stop_checker and stop_checker():
+        return []
     cap = max_pages if max_pages is not None else config.MAX_INTERNAL_LINKS + 1
 
     docs: list[PageDoc] = []
@@ -335,19 +337,28 @@ def crawl_site(start_url: str, max_pages: int = None) -> list[PageDoc]:
     root_doc = _build_pagedoc(start_url, root_resp)
     docs.append(root_doc)
 
+    if stop_checker and stop_checker():
+        return docs
+
     internal_links = gather_internal(start_url, root_html)
     internal_links = internal_links[: max(0, cap - 1)]
 
     if internal_links:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=config.FETCH_CONCURRENCY) as pool:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=config.FETCH_CONCURRENCY)
+        try:
             futures = {pool.submit(fetch_doc, url): url for url in internal_links}
             for future in concurrent.futures.as_completed(futures):
+                if stop_checker and stop_checker():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    return docs
                 try:
                     doc = future.result()
                     if doc.fetched_ok:
                         docs.append(doc)
                 except Exception:
                     continue
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     return docs
 
@@ -355,61 +366,72 @@ def crawl_site(start_url: str, max_pages: int = None) -> list[PageDoc]:
 # ---------------------------------------------------------------------------
 # Search decision gate: heuristic fast path + LLM fallback
 # ---------------------------------------------------------------------------
+_EXPLICIT_SEARCH_PATTERNS = re.compile(
+    r"\b(search (?:the )?(?:web|internet|online|for)|deep.?research|google (?:this|for)|"
+    r"look up (?:on|in)|find (?:on|in) (?:the )?(?:web|internet|online)|web search)\b",
+    re.IGNORECASE,
+)
+
 _TIME_SENSITIVE_PATTERNS = re.compile(
-    r"\b(today|yesterday|this week|this month|this year|latest|current|currently|now|breaking|"
-    r"recent|recently|update|updated|202[4-9]|price|stock|score|weather|"
-    r"news|release date|who is the current|as of|who won|election|standing|schedule|market|live)\b",
+    r"\b(today'?s?|yesterday|this week|this month|latest news|breaking news|"
+    r"current (?:price|stock|weather|score|status|version|leader|president|prime minister|population)|"
+    r"currently (?:trading|priced|available)|right now|live score|stock price|weather (?:in|for|today)|"
+    r"who won (?:the )?202[4-9]|election results|schedule for today)\b",
     re.IGNORECASE,
 )
+
 _VERIFY_PATTERNS = re.compile(
-    r"\b(verify|confirm|is it true|fact.?check|source|citation|according to|who is|where is|when was|when did)\b",
+    r"\b(verify whether|confirm whether|is it true that|fact.?check|according to recent reports|citation needed)\b",
     re.IGNORECASE,
 )
+
 _STATIC_PATTERNS = re.compile(
     r"\b(explain|definition|define|what is|what are|how to|how do|how does|why is|why does|"
     r"write|code|debug|fix|create|generate|summarize|translate|convert|calculate|solve|"
-    r"joke|poem|story|help me|teach me|implement|class|function|script|example|difference between|compare|pros and cons)\b",
+    r"joke|poem|story|help me|teach me|implement|class|function|script|example|difference between|compare|pros and cons|"
+    r"understand|problem|solution|architecture|design|pattern|algorithm|tutorial)\b",
     re.IGNORECASE,
 )
+
 _CONVERSATIONAL_PATTERNS = re.compile(
-    r"^(hi|hello|hey|greetings|good morning|good afternoon|good evening|who are you|what can you do|thanks|thank you|ok|okay|bye|help)\b",
+    r"^(hi|hello|hey|greetings|good (?:morning|afternoon|evening)|who are you|what can you do|"
+    r"thanks|thank you|ok|okay|bye|help|test|ping|howdy)\b",
     re.IGNORECASE,
 )
 
 
 def heuristic_gate(query: str) -> tuple[bool, float, str, str]:
-    """Fast keyword/pattern-based decision. Returns (decision, confidence, reason, category).
-
-    FIX: time-sensitive and verify checks now run BEFORE the conversational
-    short-circuit. Previously a query like "help me check the current
-    bitcoin price" or "hey, what's the weather right now" matched the
-    leading "help"/"hey" alternative in _CONVERSATIONAL_PATTERNS and
-    returned confidence 0.95 for a NO-search decision — well above
-    GATE_CONFIDENCE_THRESHOLD — so it never fell through to the
-    time-sensitive check or the LLM fallback gate. Time-sensitive/verify
-    intent now always wins over a conversational-looking prefix.
-    """
+    """Fast keyword/pattern-based decision. Returns (decision, confidence, reason, category)."""
     urls = extract_urls(query)
     if urls:
         return True, 1.0, "Query contains a URL", "url"
 
+    q_strip = query.strip()
+
+    # 1. Explicit user search demand always triggers search
+    if _EXPLICIT_SEARCH_PATTERNS.search(query):
+        return True, 1.0, "Explicit search requested by user", "search"
+
+    # 2. Conversational greetings never need search
+    if _CONVERSATIONAL_PATTERNS.match(q_strip):
+        return False, 0.98, "Conversational pattern detected", "static"
+
+    # 3. Static/coding/explanatory queries never need search unless explicit
+    if _STATIC_PATTERNS.search(query) and not _TIME_SENSITIVE_PATTERNS.search(query):
+        return False, 0.95, "Static/explanatory/coding query detected", "static"
+
+    # 4. Clear time-sensitive or live fact queries
     if _TIME_SENSITIVE_PATTERNS.search(query):
         return True, 0.95, "Time-sensitive or current-events pattern detected", "time_sensitive"
 
+    # 5. Verification/fact-check patterns
     if _VERIFY_PATTERNS.search(query):
         return True, 0.90, "Verification/fact-check pattern detected", "verify"
 
-    q_strip = query.strip()
-    if _CONVERSATIONAL_PATTERNS.match(q_strip):
-        return False, 0.95, "Conversational pattern detected", "static"
-
-    if _STATIC_PATTERNS.search(query):
-        return False, 0.92, "Static/explanatory query pattern detected", "static"
-
-    # Default heuristic for general reasoning & general queries
+    # 6. General reasoning / long questions default to LLM knowledge without search
     words = q_strip.split()
     if len(words) >= 4:
-        return False, 0.86, "General knowledge / reasoning pattern", "static"
+        return False, 0.90, "General knowledge / reasoning pattern", "static"
 
     return False, 0.5, "No strong heuristic signal", "unclear"
 
@@ -584,7 +606,7 @@ def multi_search_enhanced(keywords: list[str], max_sources: int = None, stop_che
             except Exception:
                 continue
     finally:
-        pool.shutdown(wait=True)
+        pool.shutdown(wait=False, cancel_futures=True)
 
     return sources
 

@@ -86,29 +86,35 @@ class LLMClient:
                 f"LM Studio not running at {self.base_url}. Start the server and click Refresh."
             ) from e
 
-        for raw_line in resp.iter_lines(decode_unicode=True):
-            if not raw_line:
-                continue
-            if not raw_line.startswith("data:"):
-                continue
+        try:
+            for raw_line in resp.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                if not raw_line.startswith("data:"):
+                    continue
 
-            data_str = raw_line[len("data:"):].strip()
-            if data_str == "[DONE]":
-                break
+                data_str = raw_line[len("data:"):].strip()
+                if data_str == "[DONE]":
+                    break
 
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+
+                delta = choices[0].get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    yield content
+        finally:
             try:
-                chunk = json.loads(data_str)
-            except json.JSONDecodeError:
-                continue
-
-            choices = chunk.get("choices") or []
-            if not choices:
-                continue
-
-            delta = choices[0].get("delta") or {}
-            content = delta.get("content")
-            if content:
-                yield content
+                resp.close()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Non-streaming chat completion (used by search gate, keyword gen)

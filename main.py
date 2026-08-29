@@ -7,6 +7,7 @@ Run with: python main.py   (or: flet run main.py)
 
 import os
 import glob
+import time
 import threading
 import flet as ft
 
@@ -104,7 +105,7 @@ def main(page: ft.Page):
     # Starting padding scales with screen width
     chat_history_wrapper = ft.Container(
         content=chat_history, expand=True, bgcolor=ui.T["bg"],
-        padding=ft.padding.symmetric(horizontal=80, vertical=30),
+        padding=ft.padding.symmetric(horizontal=30, vertical=20),
     )
     status_banner = ft.Container(visible=False)
     
@@ -168,8 +169,8 @@ def main(page: ft.Page):
             rebuild_sidebar()
 
         # 2. Responsive padding inside chat canvas
-        h_padding = 80 if w > 1200 else (40 if w > 1000 else 20)
-        chat_history_wrapper.padding = ft.padding.symmetric(horizontal=h_padding, vertical=20)
+        h_padding = 35 if w > 1200 else (20 if w > 1000 else 10)
+        chat_history_wrapper.padding = ft.padding.symmetric(horizontal=h_padding, vertical=15)
         
         # 3. Re-draw components that adapt dynamically to window width
         rebuild_input_dock()
@@ -206,14 +207,28 @@ def main(page: ft.Page):
                 status_banner.bgcolor = ft.Colors.with_opacity(0.15, ui.T["accent_highlight"])
                 status_banner.border_radius = 8
                 status_banner.margin = ft.margin.symmetric(horizontal=20, vertical=8)
-                status_banner.visible = True
+    # ------------------------------------------------------------------
+    # Pre-warm embedding model in background for instant query responses
+    # ------------------------------------------------------------------
+    from search_engine import _get_embed_model
+    threading.Thread(target=_get_embed_model, daemon=True).start()
 
     # ------------------------------------------------------------------
     # Session helpers
     # ------------------------------------------------------------------
     def ensure_session():
         if state["session_id"] is None:
-            state["session_id"] = db.create_session()
+            sessions = db.list_sessions()
+            # If sessions exist with messages, load the most recent one
+            for s in sessions:
+                msgs = db.get_messages(s["id"])
+                if msgs:
+                    load_session(s["id"])
+                    return
+            if sessions:
+                load_session(sessions[0]["id"])
+            else:
+                state["session_id"] = db.create_session()
 
     def show_empty_state_if_needed():
         if not chat_history.controls:
@@ -230,7 +245,8 @@ def main(page: ft.Page):
         state["session_id"] = session_id
         chat_history.controls.clear()
         last_user_query = ""
-        for m in db.get_messages(session_id):
+        msgs = db.get_messages(session_id)
+        for m in msgs:
             if m["role"] == "user":
                 last_user_query = m["content"]
                 chat_history.controls.append(ft.Row([ui.user_bubble(m["content"])], alignment=ft.MainAxisAlignment.END))
@@ -245,13 +261,20 @@ def main(page: ft.Page):
         show_empty_state_if_needed()
         rebuild_sidebar()
         page.update()
+        if msgs:
+            try:
+                chat_history.scroll_to(offset=-1, duration=100)
+            except Exception:
+                pass
 
     def delete_session(session_id: int):
         db.delete_session(session_id)
         if state["session_id"] == session_id:
             state["session_id"] = None
             chat_history.controls.clear()
-        rebuild_sidebar()
+            ensure_session()
+        else:
+            rebuild_sidebar()
         page.update()
 
     # ------------------------------------------------------------------
@@ -469,6 +492,44 @@ def main(page: ft.Page):
 
     def handle_stop(e=None):
         state["stop_requested"] = True
+        try:
+            rebuild_input_dock()
+            page.update()
+        except Exception:
+            pass
+
+    def stream_to_live_block(target_block: ui.LiveResponseBlock, stream_iter, max_tok: int = None) -> str:
+        """Throttled streaming renderer that flushes tokens smoothly without flooding Flet's event loop."""
+        full_text = ""
+        last_flush = time.time()
+        pending_chunks = 0
+
+        target_block.set_answer("")
+        for chunk in stream_iter:
+            if state["stop_requested"]:
+                break
+            full_text += chunk
+            pending_chunks += 1
+            now = time.time()
+            # Flush every ~35ms, or on newline if at least 2 tokens accumulated
+            if (now - last_flush >= 0.035 and pending_chunks >= 2) or ("\n" in chunk and pending_chunks >= 2):
+                target_block.set_answer(full_text)
+                try:
+                    chat_history.scroll_to(offset=-1, duration=0)
+                except Exception:
+                    pass
+                last_flush = now
+                pending_chunks = 0
+
+        # Final flush on completion
+        if full_text:
+            target_block.set_answer(full_text)
+            try:
+                chat_history.scroll_to(offset=-1, duration=0)
+            except Exception:
+                pass
+
+        return full_text
 
     # ------------------------------------------------------------------
     # Core send/generate pipeline with LIVE PROGRESS ANIMATIONS
@@ -515,7 +576,10 @@ def main(page: ft.Page):
         page.update()
         
         # Scroll to bottom on new query
-        chat_history.scroll_to(offset=-1, duration=200)
+        try:
+            chat_history.scroll_to(offset=-1, duration=150)
+        except Exception:
+            pass
 
         state["is_generating"] = True
         state["stop_requested"] = False
@@ -529,7 +593,10 @@ def main(page: ft.Page):
         # Local helper to write a step and auto-scroll the chat
         def add_step_and_scroll(text: str, status: str):
             live_block.add_step(text, status)
-            chat_history.scroll_to(offset=-1, duration=150)
+            try:
+                chat_history.scroll_to(offset=-1, duration=0)
+            except Exception:
+                pass
 
         sources = []
         keywords = []
@@ -565,29 +632,27 @@ def main(page: ft.Page):
                     live_block.set_sources(deep_sources)
                     db.increment_stats(state["session_id"], searches_performed=len(deep_sources), sources_found=len(deep_sources))
 
-                live_block.set_answer("")
-                full_text = ""
-                for chunk in llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.DEEP_RESEARCH_MAX_TOKENS):
-                    if state["stop_requested"]:
-                        break
-                    full_text += chunk
-                    live_block.set_answer(full_text)
-                    chat_history.scroll_to(offset=-1, duration=100)
+                stream_iter = llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.DEEP_RESEARCH_MAX_TOKENS)
+                full_text = stream_to_live_block(live_block, stream_iter)
 
                 if state["stop_requested"] and not full_text:
                     live_block.set_answer("⏹️ Research stopped.")
                     return
 
-                # Auto-export dossier to file
-                report_path = export_research_report(query, full_text, deep_sources)
-                add_step_and_scroll(f"Saved dossier to exports/{os.path.basename(report_path)}", "done")
+                if full_text and deep_sources:
+                    # Auto-export dossier to file
+                    report_path = export_research_report(query, full_text, deep_sources)
+                    add_step_and_scroll(f"Saved dossier to exports/{os.path.basename(report_path)}", "done")
 
                 related_questions = [
                     f"What are the implementation risks of {query[:25]}?",
                     "Can you generate a summary executive slide deck outline?",
                 ]
                 live_block.finalize(full_text, related_questions=related_questions, on_related_click=handle_send)
-                chat_history.scroll_to(offset=-1, duration=200)
+                try:
+                    chat_history.scroll_to(offset=-1, duration=150)
+                except Exception:
+                    pass
 
                 db.add_message(state["session_id"], "assistant", full_text, sources=deep_sources, md_chunks_used=chunks_used)
                 return
@@ -615,17 +680,8 @@ def main(page: ft.Page):
                 if agent_sources:
                     live_block.set_sources(agent_sources)
 
-                live_block.set_answer("")
-                full_text = ""
-                try:
-                    for chunk in llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.AGENT_MAX_TOKENS):
-                        if state["stop_requested"]:
-                            break
-                        full_text += chunk
-                        live_block.set_answer(full_text)
-                        chat_history.scroll_to(offset=-1, duration=100)
-                except Exception:
-                    pass
+                stream_iter = llm_client.stream_chat(state["model"], synthesis_messages, max_tokens=config.AGENT_MAX_TOKENS)
+                full_text = stream_to_live_block(live_block, stream_iter)
 
                 # Fallback 1: non-streaming chat if stream produced nothing
                 if not full_text and not state["stop_requested"]:
@@ -644,8 +700,6 @@ def main(page: ft.Page):
                         full_text = "Task executed successfully."
                     live_block.set_answer(full_text)
 
-                add_step_and_scroll("Synthesizing comprehensive final answer...", "done")
-
                 if state["stop_requested"] and not full_text:
                     live_block.set_answer("⏹️ Agent task stopped.")
                     return
@@ -663,42 +717,42 @@ def main(page: ft.Page):
                         "Save key takeaways to Second Brain Memory Vault",
                     ]
                 live_block.finalize(full_text, related_questions=related_questions, on_related_click=handle_send)
-                chat_history.scroll_to(offset=-1, duration=200)
+                try:
+                    chat_history.scroll_to(offset=-1, duration=150)
+                except Exception:
+                    pass
 
                 db.add_message(state["session_id"], "assistant", full_text, sources=agent_sources, md_chunks_used=chunks_used)
                 return
 
             do_url_crawl = False
             do_search = False
+            category = "static"
 
-            # STEP 1: Decide search requirements
-            add_step_and_scroll("Deciding search requirements...", "running")
-
+            # STEP 1: Decide search requirements based strictly on user intent
             if state["search_mode"] == config.SEARCH_MODE_URL_ONLY and urls_in_query:
                 do_url_crawl = True
             elif state["search_mode"] == config.SEARCH_MODE_FORCE_WEB:
                 do_search = True
             elif state["search_mode"] == config.SEARCH_MODE_FORCE_NONE:
-                pass
+                do_search = False
+                do_url_crawl = False
             else:
+                # AUTO mode: intelligent gating
                 if urls_in_query and config.ENABLE_URL_DIRECT_CRAWL:
                     do_url_crawl = True
                 else:
                     decision, confidence, reason, category = needs_search(query, llm_client, state["model"])
                     do_search = decision
 
-            add_step_and_scroll("Deciding search requirements...", "done")
-
             if state["stop_requested"]:
                 live_block.set_answer("⏹️ Cancelled.")
                 return
 
-            category = "unclear"
-
-            # STEP 2: Scrape / Web Search
+            # STEP 2: Scrape / Web Search (only if required)
             if do_url_crawl:
                 add_step_and_scroll(f"Crawling website: {urls_in_query[0]}...", "running")
-                page_docs = crawl_site(urls_in_query[0])
+                page_docs = crawl_site(urls_in_query[0], stop_checker=lambda: state["stop_requested"])
                 add_step_and_scroll(f"Crawling website: {urls_in_query[0]}...", "done")
                 
                 add_step_and_scroll(f"Indexed {len(page_docs)} document chunks", "done")
@@ -714,23 +768,27 @@ def main(page: ft.Page):
                     live_block.set_answer("⏹️ Cancelled.")
                     return
 
-                add_step_and_scroll(f"Querying web index for '{keywords[0]}'...", "running")
+                kw_display = keywords[0] if keywords else query
+                add_step_and_scroll(f"Querying web index for '{kw_display}'...", "running")
                 sources = multi_search_enhanced(keywords, stop_checker=lambda: state["stop_requested"])
-                add_step_and_scroll(f"Querying web index for '{keywords[0]}'...", "done")
+                add_step_and_scroll(f"Querying web index for '{kw_display}'...", "done")
                 
                 add_step_and_scroll(f"Found {len(sources)} sources", "done")
                 db.increment_stats(state["session_id"], sources_found=len(sources))
 
                 # Display compact source badges instantly
-                live_block.set_sources(sources)
-                chat_history.scroll_to(offset=-1, duration=150)
+                if sources:
+                    live_block.set_sources(sources)
+                    try:
+                        chat_history.scroll_to(offset=-1, duration=150)
+                    except Exception:
+                        pass
 
             if state["stop_requested"]:
                 live_block.set_answer("⏹️ Cancelled.")
                 return
 
             # STEP 3: Context Retrieval
-            add_step_and_scroll("Retrieving guidelines and context files...", "running")
             all_messages = db.get_messages(state["session_id"])
             recent_count = config.HISTORY_TURNS
             older_messages = all_messages[:-recent_count] if len(all_messages) > recent_count else []
@@ -751,10 +809,6 @@ def main(page: ft.Page):
             system_context, chunks_used = context_manager.build_system_context(
                 query, history_summary=older_summary, session_id=state["session_id"],
             )
-            add_step_and_scroll("Retrieving guidelines and context files...", "done")
-            
-            if chunks_used:
-                add_step_and_scroll(f"Ranked and selected {len(chunks_used)} document context chunk(s)", "done")
 
             if state["stop_requested"]:
                 live_block.set_answer("⏹️ Cancelled.")
@@ -767,27 +821,17 @@ def main(page: ft.Page):
                 conversation_turns=conversation_turns,
             )
 
-            # Clear typing and prepare streaming
-            live_block.set_answer("")
-
-            full_text = ""
-            for chunk in llm_client.stream_chat(state["model"], messages):
-                if state["stop_requested"]:
-                    break
-                full_text += chunk
-                live_block.set_answer(full_text)
-                
-                # Dynamic scroll to follow response pointer
-                chat_history.scroll_to(offset=-1, duration=100)
+            stream_iter = llm_client.stream_chat(state["model"], messages)
+            full_text = stream_to_live_block(live_block, stream_iter)
 
             if state["stop_requested"] and not full_text:
                 live_block.set_answer("⏹️ Response stopped.")
                 return
 
-            # Generate related questions to match mockup suggestions
+            # Generate related questions
             related_questions = [
                 f"Can you expand on {query[:25]}?",
-                "What is the source data?",
+                "Provide a step-by-step summary",
             ]
             
             # Finalize: collapses the reasoning tile, registers suggest options
@@ -796,7 +840,10 @@ def main(page: ft.Page):
                 related_questions=related_questions,
                 on_related_click=handle_send
             )
-            chat_history.scroll_to(offset=-1, duration=200)
+            try:
+                chat_history.scroll_to(offset=-1, duration=150)
+            except Exception:
+                pass
 
             db.add_message(state["session_id"], "assistant", full_text,
                              sources=sources, md_chunks_used=chunks_used)
@@ -807,7 +854,7 @@ def main(page: ft.Page):
             live_block.set_answer(f"⚠️ Unexpected error: {e}")
         finally:
             # Trigger background memory extraction if answer was generated
-            if 'full_text' in locals() and full_text:
+            if 'full_text' in locals() and full_text and not state.get("stop_requested"):
                 context_manager.memory_manager.extract_memories_async(
                     query=query,
                     assistant_response=full_text,
