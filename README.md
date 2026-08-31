@@ -103,7 +103,7 @@ Key settings live in `config.py` and can also be adjusted via the in-app Setting
 | `MAX_SUB_QUERIES` | `3` | Max sub-questions decomposed per research hop |
 | `ENABLE_LONG_TERM_MEMORY` | `True` | Persistent memory & Second Brain active |
 | `MAX_MEMORY_ITEMS_IN_PROMPT` | `6` | Maximum relevant memories injected per conversation turn |
-| `SEARCH_RESULTS_PER_QUERY` | `6` | Number of web results per DuckDuckGo search |
+| `SEARCH_RESULTS_PER_QUERY` | `6` | Number of web results per search |
 | `MAX_MD_TOKENS` | `1200` | Max context token budget for workspace RAG files |
 | `SIDEBAR_WIDTH` | `280` | Collapsible sidebar width in pixels |
 
