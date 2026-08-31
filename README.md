@@ -1,6 +1,6 @@
 # 🤖 Gayatri AI
 
-> A powerful, privacy-first desktop AI assistant built with [Flet](https://flet.dev/) and powered by local LLMs via [LM Studio](https://lmstudio.ai/).
+> A powerful, privacy-first desktop AI assistant 
 
 ---
 
@@ -19,12 +19,11 @@ This project was developed as part of the **[DBert Internship Program](https://d
 - 🤖 **Autonomous Agent Mode** — Break down complex, high-level goals into multi-step action plans, dispatch specialized tools (`web_search`, `read_context`, `memory_lookup`, `reason`), track progress live, and persist task states in SQLite
 - 🔬 **Autonomous Deep Research Mode** — Multi-hop inquiry with iterative query decomposition, evidence gap analysis, source verification, and auto-export to structured Markdown dossiers
 - 🧬 **Persistent Long-Term Memory (Second Brain)** — Background extraction of user preferences, constraints, and facts with confidence scoring and an interactive Memory Vault UI modal
-- 🧠 **Local LLM Integration** — Connects to [LM Studio](https://lmstudio.ai/) for 100% offline, privacy-first AI conversations with dynamic model discovery and streaming
-- 🌐 **Web Search Grounding** — Live DuckDuckGo search with hybrid relevance scoring (Semantic Embeddings via `all-MiniLM-L6-v2` + TF-IDF)
+- 🧠 **Local LLM Integration** —  100% offline, privacy-first AI conversations with dynamic model discovery and streaming
+- 🌐 **Web Search Grounding** — Live search with hybrid relevance scoring (Semantic Embeddings via `all-MiniLM-L6-v2` + TF-IDF)
 - 🔗 **URL Crawling & Deep Scrape** — Concurrently crawls and extracts content from pasted URLs and internal links
 - 📄 **Markdown-Driven RAG & Context Files** — Workspace-based context system (`workspace/`) with guardrail documents (`system_rules.md`, `project_context.md`, `brand_voice.md`)
 - 💬 **Multi-Session Chat History** — Persistent chat sessions stored in a local SQLite database with renaming, search, and deletion
-- 🎨 **Terracotta & Deep Indigo Design** — Bespoke modern Flet UI with dynamic Dark / Light theme switching and high-contrast styling
 - 📱 **Responsive Desktop Layout** — Collapsible sidebar, stats dock, and adaptive padding for any screen resolution
 - ⚡ **Live Streaming Responses** — Real-time token streaming with multi-tier fallback resilience and step-by-step execution indicators
 - 🔍 **6 Intelligent Modes** — Auto, Agent Mode 🤖, Deep Research 🔬, Web Search, URL Only, or Search Off
@@ -36,9 +35,6 @@ This project was developed as part of the **[DBert Internship Program](https://d
 
 | Layer | Technology | Description |
 |---|---|---|
-| UI Framework | [Flet](https://flet.dev/) | Flutter-powered Python desktop UI |
-| LLM Backend | [LM Studio](https://lmstudio.ai/) | Local OpenAI-compatible inference server |
-| Default Model | Qwen 2.5 7B / Auto-detected | High-performance local reasoning model |
 | Agent Engine | `agent.py` | Multi-step task planner, tool dispatcher & SQLite execution tracker |
 | Deep Research | `deep_research.py` | Multi-hop search planner, gap analyzer & dossier synthesizer |
 | Second Brain | `memory_manager.py` | Background memory extractor & semantic retrieval engine |
@@ -53,10 +49,7 @@ This project was developed as part of the **[DBert Internship Program](https://d
 
 ### Prerequisites
 
-- Python 3.10 or higher
-- [LM Studio](https://lmstudio.ai/) installed and running with a local model loaded
-
-### Installation
+-## Installation
 
 ```bash
 # 1. Clone the repository
@@ -156,9 +149,7 @@ This project is open-source and developed for educational purposes under the **[
 |---|---|
 | 🌐 DBert Internship Program | [https://dbert.online/](https://dbert.online/) |
 | 📦 Repository | [https://github.com/Gayatri-Education/Gayatri-AI](https://github.com/Gayatri-Education/Gayatri-AI) |
-| 🖥️ LM Studio | [https://lmstudio.ai/](https://lmstudio.ai/) |
-| ⚡ Flet Framework | [https://flet.dev/](https://flet.dev/) |
-
+|
 ---
 
 <div align="center">
