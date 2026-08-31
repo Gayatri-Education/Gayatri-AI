@@ -64,10 +64,7 @@ python main.py
 ```
 
 > 💡 **Windows Quick Start:** You can also launch Gayatri AI by double-clicking `run_gayatri_ai.bat`.
-> 
-> ⚠️ Make sure LM Studio local server is running on `http://localhost:1234` (default) before launching.
 
----
 
 ## 📁 Project Structure
 
@@ -99,7 +96,6 @@ Key settings live in `config.py` and can also be adjusted via the in-app Setting
 
 | Setting | Default | Description |
 |---|---|---|
-| `LMSTUDIO_BASE_URL` | `http://127.0.0.1:1234/v1` | LM Studio server API base URL |
 | `DEFAULT_MODEL` | Auto-detected | Default LLM model ID (discovered from `/v1/models`) |
 | `AGENT_MAX_STEPS` | `6` | Maximum steps in an autonomous agent execution plan |
 | `AGENT_MAX_TOKENS` | `2500` | Max output token budget for agent result synthesis |
@@ -120,7 +116,7 @@ Key settings live in `config.py` and can also be adjusted via the in-app Setting
 | **Auto** | `Auto` | AI automatically decides whether web search or context retrieval is needed |
 | **Agent Mode** | `Agent 🤖` | Full autonomous execution: plans multi-step strategy, runs tools (`web_search`, `read_context`, `memory_lookup`, `reason`), and streams comprehensive solutions |
 | **Deep Research** | `Deep Research 🔬` | Multi-hop autonomous inquiry: recursively analyzes evidence gaps, gathers cross-source data, and synthesizes structured research dossiers |
-| **Web Search** | `Web Search` | Forces DuckDuckGo search and source synthesis on every query |
+| **Web Search** | `Web Search` | Forces search and source synthesis on every query |
 | **URL Only** | `URL Only` | Directly crawls and summarizes specific URLs provided in your prompt |
 | **Search Off** | `Search Off` | Pure offline local LLM generation with zero internet access |
 
