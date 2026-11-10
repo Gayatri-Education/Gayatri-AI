@@ -30,14 +30,17 @@ def finalize(db, attempt, timestamp, automatic=False):
             },
         )
         bucket["total"] += 1
+        accepted = q.get(
+            "accepted_options", [q["correct_option"]] if q["correct_option"] else []
+        )
         answer = responses.get(item.question_id)
         if not answer:
             bucket["unanswered"] += 1
         else:
             bucket["answered"] += 1
-            if not q["correct_option"]:
+            if not accepted:
                 bucket["ungraded"] += 1
-            elif answer == q["correct_option"]:
+            elif answer in accepted:
                 bucket["correct"] += 1
                 raw += paper.marks_per_question
             else:

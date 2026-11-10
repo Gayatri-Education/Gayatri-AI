@@ -11,6 +11,8 @@ A NEET practice portal built from the supplied [15-day conversion plan](docs/Gay
 - Immutable paper and answer-key snapshots, negative marking for reviewed mocks, and subject summaries.
 - Administrator review with source metadata, images, verified key citations, explanations, revision checks and an audit trail.
 
+Public-source answer research now attaches **947 draft answer proposals**, flags **74 conflicts**, and records **889 mapping cases** and **330 unmatched questions**. See [answer-key research and sources](docs/ANSWER_KEYS.md). None is automatically approved; results distinguish sourced proposals from verified keys, and approved keys can accept multiple correct choices.
+
 **The supplied CSV has no answer keys.** All imported records begin unapproved, including the 633 records flagged for extraction review. Unscored practice is available immediately. Scored mocks remain blocked until each section has sufficient manually approved keys. No answers, official difficulty ratings, percentiles, or paper authenticity are invented. Practice uses bank questions only; AI gap-fill is not wired into this release.
 
 ## Run locally
@@ -42,6 +44,6 @@ cd frontend
 npx playwright test
 ```
 
-The API tests use a separate temporary database. Browser tests create a student in the running development database and complete a real unscored attempt. Playwright uses `/usr/bin/chromium` by default on this cloud machine; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to another installed Chromium path when needed.
+The API tests use a separate temporary database. Browser tests create a student in the running development database and complete a real unscored attempt. The administrator source-review browser test requires an explicitly isolated database: start the API with `PORTAL_STATE_DIR=/tmp/gayatri-answer-e2e-state` after seeding that directory, and run tests with `PORTAL_E2E_STATE_DIR=/tmp/gayatri-answer-e2e-state`. It creates/promotes only its fixture account in that temporary database. Set `PORTAL_TEST_BASE_URL` if the test service uses a port other than 8000. Playwright uses `/usr/bin/chromium` by default on this cloud machine; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to another installed Chromium path when needed.
 
 See [architecture](docs/ARCHITECTURE.md), [API contract](docs/API_SPEC.md), [database schema](docs/DB_SCHEMA.md), [deployment](docs/DEPLOYMENT.md), and [implementation status](docs/IMPLEMENTATION_STATUS.md). Dataset provenance and extraction limitations are preserved in [the supplied dataset README](data/question_bank/neet/README.md).

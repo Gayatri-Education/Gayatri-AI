@@ -4,6 +4,7 @@ import secrets
 from fastapi import HTTPException
 from sqlalchemy import select
 from backend.models import Blueprint, Question, Paper, PaperQuestion
+from backend.ingestion.answer_keys import approved_options
 
 
 def build_paper(db, exam, user_id, mode, year=None):
@@ -70,6 +71,8 @@ def build_paper(db, exam, user_id, mode, year=None):
             ]
         }
         snapshot["options"] = json.loads(q.options_json)
+        snapshot["accepted_options"] = approved_options(q)
+        snapshot["sourced_answer"] = json.loads(q.metadata_json).get("sourced_answer")
         if not q.approved:
             snapshot["correct_option"] = None
             snapshot["explanation"] = ""

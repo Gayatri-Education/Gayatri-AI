@@ -20,8 +20,12 @@ Missing prerequisites: a verified answer-key dataset and human review for scored
 
 ## Current-instance validation
 
-- Ten Python tests passed, including real-upload ingestion and rejection of corrupted/missing assets.
-- A real Chromium browser test passed registration → practice → save → reload → image display → submit → result/history, plus mobile navigation and no horizontal overflow.
+- Sixteen Python tests passed, including real-upload ingestion, key provenance, multiple-answer scoring, hidden draft keys, and rejection of corrupted/missing assets.
+- Two real Chromium browser tests passed: the full student practice/mobile flow, and administrator source/conflict review with no automatic approval.
 - Frontend production build passed; `pip check` passed; `npm audit` reported zero vulnerabilities after updating Vite and Playwright.
 - Repeated real-dataset seeding inserted zero duplicates and retained existing records.
 - Container build, public deployment, live LM Studio integration and GitHub Actions execution have not been validated here. The new workflow performs API, build, audit and browser checks in GitHub when permitted.
+
+## Public answer-source integration
+
+All 2,240 questions now have a research-ledger entry: 947 unapproved answer proposals, 74 conflicts, 889 unresolved question/option mappings, and 330 without a reliable source match. Evidence is pinned to public repository commits and checksums. Admin review and post-attempt study review display the proposals separately from approved keys. Multiple accepted choices are supported in review, immutable snapshots and scoring. No question was automatically approved. Direct NTA-site access remains blocked; see [ANSWER_KEYS.md](ANSWER_KEYS.md) for sources, reproducibility, known wrong keys and remaining work.
