@@ -1,0 +1,3 @@
+# Preserve supplied CSV bytes, CRLF records and cell whitespace: metadata hashes
+# depend on the exact question text. Source extraction data is not code formatting.
+data/question_bank/neet/*.csv -text -whitespace

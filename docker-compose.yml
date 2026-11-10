@@ -1,0 +1,18 @@
+services:
+  portal:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      PORTAL_SECRET: ${PORTAL_SECRET:?Set a unique PORTAL_SECRET in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - portal_state:/app/var
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+volumes:
+  portal_state:

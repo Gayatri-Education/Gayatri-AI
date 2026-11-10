@@ -1,149 +1,47 @@
-# 🤖 Gayatri AI
+# Gayatri Exam Portal
 
-> A powerful, privacy-first desktop AI assistant built with [Flet](https://flet.dev/) and powered by local LLMs via [LM Studio](https://lmstudio.ai/).
+A NEET practice portal built from the supplied [15-day conversion plan](docs/Gayatri_Exam_Portal_15Day_Plan.pdf), with FastAPI, SQLAlchemy, SQLite, and React/Vite/Tailwind. This first implementation replaces the desktop entry point with a multi-user web workflow. The original Flet application remains in `legacy/desktop/` for reference; its committed chat database has been removed from the current tree, with a local backup outside the repository.
 
----
+## What works
 
-## 🎓 Built Under the DBert Internship Program
+- Student registration and sign-in using password hashing and HttpOnly JWT cookies.
+- A validated bank of **2,240 NEET questions**, covering supplied papers labelled 2015–2026, with **2,240 original source images**. The importer checks row hashes, subjects, years and image mappings, and retains existing reviews on repeat import.
+- A clearly labelled **15-question, 20-minute short practice blueprint**: five questions per subject. This is a study session, not an official full-length NEET paper.
+- Randomized, non-repeating papers; source-year filters; saved responses; a question palette; local flags; server-enforced timing and automatic submission.
+- Immutable paper and answer-key snapshots, negative marking for reviewed mocks, and subject summaries.
+- Administrator review with source metadata, images, verified key citations, explanations, revision checks and an audit trail.
 
-This project was developed as part of the **[DBert Internship Program](https://dbert.online/)** — a hands-on initiative designed to equip students and developers with real-world AI and software development skills.
+**The supplied CSV has no answer keys.** All imported records begin unapproved, including the 633 records flagged for extraction review. Unscored practice is available immediately. Scored mocks remain blocked until each section has sufficient manually approved keys. No answers, official difficulty ratings, percentiles, or paper authenticity are invented. Practice uses bank questions only; AI gap-fill is not wired into this release.
 
-> 💡 Want to build real-world AI projects like this one? **[Join the DBert Internship Program →](https://dbert.online/)**
+## Run locally
 
-[![DBert Internship Program](https://img.shields.io/badge/DBert-Internship%20Program-blue?style=for-the-badge)](https://dbert.online/)
-
----
-
-## ✨ Features
-
-- 🧠 **Local LLM Integration** — Connects to [LM Studio](https://lmstudio.ai/) for fully offline, privacy-first AI conversations
-- 🌐 **Web Search Grounding** — Automatically searches the web to give up-to-date, source-backed answers
-- 🔗 **URL Crawling** — Paste a URL and Gayatri AI reads the entire website to answer questions about it
-- 📄 **Context Files (RAG)** — Attach Markdown files as long-term or per-session context documents
-- 💬 **Multi-Session Chat History** — Persistent chat sessions stored in a local SQLite database
-- 🎨 **Dark / Light Theme** — Smooth animated theme switching
-- 📱 **Responsive Layout** — Auto-adapts sidebar and padding to any window size
-- ⚡ **Live Streaming Responses** — Real-time token streaming with step-by-step progress indicators
-- 🔍 **Smart Search Modes** — Auto, Force Web, URL Only, or No Search
-- 📊 **Session Statistics** — Tracks keywords generated, searches performed, and sources found
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|---|---|
-| UI Framework | [Flet](https://flet.dev/) (Flutter-powered Python UI) |
-| LLM Backend | [LM Studio](https://lmstudio.ai/) (OpenAI-compatible API) |
-| Default Model | Qwen 2.5 7B |
-| Database | SQLite (via `db.py`) |
-| Web Search | DuckDuckGo / multi-source search engine |
-| Context / RAG | Custom embedding + chunk ranking (`context_manager.py`) |
-| Language | Python 3.10+ |
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.10 or higher
-- [LM Studio](https://lmstudio.ai/) installed and running with a local model loaded
-
-### Installation
+Requires Python 3.10+ and Node.js 22.12+ (validated here with Python 3.12 and Node 24).
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Gayatri-Education/Gayatri-AI.git
-cd Gayatri-AI
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Run the app
-python main.py
+bash scripts/setup.sh
+.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-> ⚠️ Make sure LM Studio is running on `http://localhost:1234` (default) before launching.
+Open the running service in your own browser. The built React frontend and API share the same origin. To work on React with hot reload, run `npm run dev --prefix frontend` in a second terminal; Vite proxies `/api` to the backend.
 
----
+No administrator password is shipped. Create an account using the private prompt:
 
-## 📁 Project Structure
-
-```
-Gayatri-AI/
-├── main.py              # App entrypoint — wires all modules together
-├── config.py            # App-wide configuration and theme definitions
-├── ui_components.py     # All Flet UI widgets and components
-├── llm_client.py        # LM Studio API client with streaming support
-├── search_engine.py     # Web search, URL crawling, and grounded context builder
-├── context_manager.py   # RAG context file manager with embedding + ranking
-├── db.py                # SQLite database layer for sessions and messages
-├── diagnostic_test.py   # Connectivity and system diagnostics
-├── requirements.txt     # Python dependencies
-└── gayatri.db           # Local SQLite database (auto-created on first run)
+```bash
+.venv/bin/python -m scripts.create_admin --email your-email@example.com --name 'Your Name'
 ```
 
----
+Sign in as that administrator to access **Question review**. Do not approve a record based only on its automated difficulty or OCR-confidence label. Inspect all choices against the original image and provide a sourced answer key and explanation.
 
-## ⚙️ Configuration
+## Validate
 
-Key settings live in `config.py` and can also be changed via the in-app Settings dialog:
+```bash
+.venv/bin/python -m pytest
+npm run build --prefix frontend
+# With the built portal running and Chromium installed:
+cd frontend
+npx playwright test
+```
 
-| Setting | Default | Description |
-|---|---|---|
-| `LM_STUDIO_BASE_URL` | `http://localhost:1234` | LM Studio server URL |
-| `DEFAULT_MODEL` | `qwen2.5-7b` | Default LLM model ID |
-| `SEARCH_RESULTS_PER_QUERY` | `5` | Number of web results per search |
-| `MAX_MD_TOKENS` | `4000` | Max context token budget |
-| `HISTORY_TURNS` | `10` | Recent conversation turns to include |
-| `SIDEBAR_WIDTH` | `280` | Sidebar width in pixels |
+The API tests use a separate temporary database. Browser tests create a student in the running development database and complete a real unscored attempt. Playwright uses `/usr/bin/chromium` by default on this cloud machine; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to another installed Chromium path when needed.
 
----
-
-## 🔍 Search Modes
-
-| Mode | Behavior |
-|---|---|
-| **Auto** | AI decides whether a web search is needed |
-| **Force Web** | Always searches the web before responding |
-| **URL Only** | Only crawls URLs pasted in the query |
-| **No Search** | Pure local LLM — no internet access |
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! This project is actively developed under the [DBert Internship Program](https://dbert.online/). If you're a DBert intern or alumni:
-
-1. Fork the [repository](https://github.com/Gayatri-Education/Gayatri-AI)
-2. Create a new branch (`git checkout -b feature/your-feature`)
-3. Commit your changes (`git commit -m 'Add your feature'`)
-4. Push and open a Pull Request
-
----
-
-## 📄 License
-
-This project is open-source and developed for educational purposes under the **[DBert Internship Program](https://dbert.online/)**.
-
----
-
-## 🔗 Links
-
-| | |
-|---|---|
-| 🌐 DBert Internship Program | [https://dbert.online/](https://dbert.online/) |
-| 📦 Repository | [https://github.com/Gayatri-Education/Gayatri-AI](https://github.com/Gayatri-Education/Gayatri-AI) |
-| 🖥️ LM Studio | [https://lmstudio.ai/](https://lmstudio.ai/) |
-| ⚡ Flet Framework | [https://flet.dev/](https://flet.dev/) |
-
----
-
-<div align="center">
-
-**Developed with ❤️ under the [DBert Internship Program](https://dbert.online/)**
-
-[![DBert](https://img.shields.io/badge/DBert-Internship%20Program-blue?style=for-the-badge)](https://dbert.online/)
-
-</div>
+See [architecture](docs/ARCHITECTURE.md), [API contract](docs/API_SPEC.md), [database schema](docs/DB_SCHEMA.md), [deployment](docs/DEPLOYMENT.md), and [implementation status](docs/IMPLEMENTATION_STATUS.md). Dataset provenance and extraction limitations are preserved in [the supplied dataset README](data/question_bank/neet/README.md).

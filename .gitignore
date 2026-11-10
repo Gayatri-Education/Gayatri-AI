@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+frontend/dist/
+var/
+*.db
+*.db-shm
+*.db-wal
+*.log
+frontend/test-results/
+frontend/playwright-report/
