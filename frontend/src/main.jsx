@@ -1167,25 +1167,26 @@ function ExamResult({ id }) {
           {Object.entries(q.options).map(([letter, value]) => (
             <div
               key={letter}
-              className={`result-option ${q.correct_option === letter ? "correct" : q.selected_option === letter ? "chosen" : ""}`}
+              className={`result-option ${q.accepted_options?.includes(letter) ? "correct" : q.selected_option === letter ? "chosen" : ""}`}
             >
               <strong>{letter}</strong>
               <RichText text={value} />
               {q.selected_option === letter && (
                 <span className="small">Your response</span>
               )}
-              {q.correct_option === letter && <Check size={16} />}
+              {q.accepted_options?.includes(letter) && <Check size={16} />}
             </div>
           ))}
           <div className="review-note">
             {!q.selected_option && "Unanswered · "}
             {q.correct_option
-              ? `Verified key: ${q.correct_option}. ${q.explanation}`
+              ? `Verified key: ${(q.accepted_options || [q.correct_option]).join(" or ")}. ${q.explanation}`
               : "Awaiting verified key — no correctness judgment available."}
           </div>
           {q.answer_key_source && (
             <p className="small muted">Key source: {q.answer_key_source}</p>
           )}
+          {!q.correct_option && <SourceEvidence proposal={q.sourced_answer} />}
           <SourceImage question={q} />
         </section>
       ))}
@@ -1195,7 +1196,9 @@ function ExamResult({ id }) {
 function Admin() {
   const [data, setData] = useState(null),
     [reports, setReports] = useState(null),
+    [coverage, setCoverage] = useState(null),
     [offset, setOffset] = useState(0),
+    [questionId, setQuestionId] = useState(""),
     [subject, setSubject] = useState(""),
     [status, setStatus] = useState("pending"),
     [error, setError] = useState(""),
@@ -1204,16 +1207,18 @@ function Admin() {
     setData(null);
     Promise.all([
       api(
-        `/admin/questions?offset=${offset}&limit=5&subject=${encodeURIComponent(subject)}&status=${status}`,
+        `/admin/questions?offset=${offset}&limit=5&subject=${encodeURIComponent(subject)}&status=${status}&question_id=${encodeURIComponent(questionId)}`,
       ),
       api("/admin/reports"),
+      api("/admin/answer-key-coverage"),
     ])
-      .then(([d, r]) => {
+      .then(([d, r, c]) => {
         setData(d);
         setReports(r);
+        setCoverage(c);
       })
       .catch((e) => setError(e.message));
-  }, [offset, subject, status, reload]);
+  }, [offset, subject, status, questionId, reload]);
   return (
     <>
       <div className="page-heading">
@@ -1229,6 +1234,16 @@ function Admin() {
         </div>
       </div>
       <ErrorBox error={error} />
+      {coverage && (
+        <div className="notice">
+          Public-source research:{" "}
+          {coverage.counts_by_status.sourced_candidate || 0} answer proposals,{" "}
+          {coverage.counts_by_status.conflict || 0} conflicts,{" "}
+          {coverage.counts_by_status.mapping_required || 0} mappings to review,
+          and {coverage.counts_by_status.no_source_match || 0} questions without
+          a reliable match. None is approved automatically.
+        </div>
+      )}
       {reports && (
         <div className="stats-row">
           <Stat
@@ -1251,6 +1266,17 @@ function Admin() {
           />
         </div>
       )}
+      <label>
+        Find a question by dataset ID
+        <input
+          value={questionId}
+          placeholder="e.g. NEET_2024_PHYSICS_001"
+          onChange={(e) => {
+            setQuestionId(e.target.value);
+            setOffset(0);
+          }}
+        />
+      </label>
       <div className="filter-bar">
         <label>
           Subject
@@ -1324,6 +1350,58 @@ function Admin() {
     </>
   );
 }
+function SourceEvidence({ proposal }) {
+  if (!proposal) return null;
+  const labels = {
+    sourced_candidate: "Published-source proposal · not approved",
+    conflict: "Sources disagree · no answer selected",
+    mapping_required: "Source found · question or option mapping needs review",
+    no_source_match: "No reliable public-source match located",
+  };
+  return (
+    <section
+      className={`source-evidence ${proposal.status === "conflict" ? "source-conflict" : ""}`}
+    >
+      <strong>{labels[proposal.status] || "Source review required"}</strong>
+      {proposal.accepted_options?.length > 0 && (
+        <p>
+          Proposed choice: {proposal.accepted_options.join(" or ")}. This is not
+          a verified answer or a grade.
+        </p>
+      )}
+      <details>
+        <summary>
+          Compare {proposal.evidence.length} source reference
+          {proposal.evidence.length === 1 ? "" : "s"}
+        </summary>
+        {proposal.evidence.map((e, i) => (
+          <div className="source-reference" key={i}>
+            <a href={e.source_url} target="_blank" rel="noreferrer">
+              {e.source_id} · {e.locator} <ArrowUpRight size={12} />
+            </a>
+            <p>
+              Source key: {e.source_answer_options.join(" or ") || "unresolved"}{" "}
+              · Mapped portal choice:{" "}
+              {e.accepted_options.join(" or ") || "not established"}
+            </p>
+            <small>
+              Text match: {Math.round(e.stem_similarity * 100)}% ·{" "}
+              {Object.keys(e.option_mapping).length}/4 options matched exactly ·
+              source year {e.source_year}
+            </small>
+            {e.kind === "official_key_mirror" && (
+              <p className="small">
+                NTA-labelled final key from a GitHub mirror. Direct NTA access
+                was blocked.
+              </p>
+            )}
+          </div>
+        ))}
+      </details>
+    </section>
+  );
+}
+
 function ReviewCard({ q, onSaved }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -1331,13 +1409,16 @@ function ReviewCard({ q, onSaved }) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const form = new FormData(e.currentTarget);
+    const values = Object.fromEntries(form);
+    const accepted = form.getAll("accepted_options");
     try {
       await api(`/admin/questions/${q.id}/review`, {
         method: "PUT",
         body: {
           ...values,
           version: q.version,
+          accepted_options: accepted.length ? accepted : undefined,
           confirm_source_reviewed: values.confirm_source_reviewed === "on",
         },
       });
@@ -1370,6 +1451,7 @@ function ReviewCard({ q, onSaved }) {
           "None reported; manual verification is still required."}
       </p>
       <SourceImage question={q} openByDefault />
+      <SourceEvidence proposal={q.metadata?.sourced_answer} />
       <details>
         <summary>Source metadata</summary>
         <pre>{JSON.stringify(q.metadata, null, 2)}</pre>
@@ -1403,6 +1485,27 @@ function ReviewCard({ q, onSaved }) {
             />
           </label>
         </div>
+        <fieldset className="accepted-key-options">
+          <legend>
+            Accepted choices (a single response may match any approved choice)
+          </legend>
+          {["A", "B", "C", "D"].map((letter) => (
+            <label key={letter} className="checkbox-label">
+              <input
+                type="checkbox"
+                name="accepted_options"
+                value={letter}
+                defaultChecked={(
+                  q.metadata?.approved_answer?.accepted_options ||
+                  q.metadata?.sourced_answer?.accepted_options || [
+                    q.correct_option,
+                  ]
+                ).includes(letter)}
+              />
+              {letter}
+            </label>
+          ))}
+        </fieldset>
         <label>
           Verified explanation
           <textarea

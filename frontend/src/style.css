@@ -1991,3 +1991,74 @@ pre {
     scroll-behavior: auto !important;
   }
 }
+
+.source-evidence {
+  border: 1px solid #dcd6ea;
+  border-radius: 8px;
+  padding: 17px 19px;
+  margin: 18px 0;
+  background: #f8f6fc;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #88749b;
+}
+.source-evidence > strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+.source-evidence > p {
+  font-size: 11px;
+  margin: 8px 0;
+}
+.source-conflict {
+  border-color: #e9c7b1;
+  background: #fff8f0;
+  color: #aa805a;
+}
+.source-evidence details {
+  margin-top: 10px;
+}
+.source-reference {
+  padding: 12px 0;
+  border-bottom: 1px solid #e8e2ef;
+}
+.source-reference:last-child {
+  border-bottom: 0;
+}
+.source-reference > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow-wrap: anywhere;
+  color: #8270a3;
+  text-decoration: underline;
+}
+.source-reference p {
+  font-size: 10px;
+  margin: 6px 0;
+}
+.source-reference small {
+  font-size: 9px;
+  color: #9b8ea4;
+}
+.accepted-key-options {
+  border: 1px solid #e7e1ed;
+  border-radius: 7px;
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+.accepted-key-options legend {
+  font-size: 10px;
+  color: #96839f;
+  padding: 0 6px;
+}
+.accepted-key-options label {
+  display: inline-flex;
+  margin: 7px 20px 7px 0;
+  gap: 8px;
+}
+.accepted-key-options input {
+  width: 14px;
+  height: 14px;
+}

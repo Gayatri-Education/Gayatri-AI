@@ -1,6 +1,6 @@
 # 🤖 Gayatri AI
 
-> A powerful, privacy-first desktop AI assistant 
+> A powerful, privacy-first desktop AI assistant
 
 ---
 

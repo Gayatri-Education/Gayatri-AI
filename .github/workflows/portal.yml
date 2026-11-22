@@ -29,6 +29,9 @@ jobs:
       - name: Start seeded portal and test browser workflow
         shell: bash
         run: |
+          export PORTAL_STATE_DIR=/tmp/gayatri-portal-ci-state
+          export PORTAL_E2E_STATE_DIR="$PORTAL_STATE_DIR"
+          export PORTAL_TEST_PYTHON=python
           python -m scripts.seed_db
           uvicorn backend.main:app --host 127.0.0.1 --port 8000 > /tmp/portal-server.log 2>&1 &
           server_pid=$!

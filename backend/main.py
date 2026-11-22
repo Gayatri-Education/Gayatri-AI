@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -249,6 +250,11 @@ def attempt_view(db, attempt, include_review=False):
                     for key in ["correct_option", "explanation", "answer_key_source"]
                 }
             )
+        if include_review:
+            public["accepted_options"] = q.get(
+                "accepted_options", [q["correct_option"]] if q["correct_option"] else []
+            )
+            public["sourced_answer"] = q.get("sourced_answer")
         questions.append(public)
     timestamp = now()
     return {
@@ -389,6 +395,7 @@ def result(attempt_id: int, user=Depends(current_user), db=Depends(get_db)):
 @app.get("/api/admin/questions")
 def admin_questions(
     subject: str | None = None,
+    question_id: str | None = None,
     year: int | None = None,
     status: str = "pending",
     offset: int = 0,
@@ -397,6 +404,8 @@ def admin_questions(
     db=Depends(get_db),
 ):
     conditions = []
+    if question_id:
+        conditions.append(Question.external_id == question_id.strip())
     if subject:
         conditions.append(Question.subject == subject)
     if year:
@@ -457,7 +466,14 @@ def review(
     q = db.get(Question, question_id)
     if not q:
         raise HTTPException(404, "Question not found")
+    metadata = json.loads(q.metadata_json)
+    metadata["approved_answer"] = {
+        "accepted_options": body.accepted_options,
+        "question_sha256": hashlib.sha256(q.text.encode()).hexdigest(),
+        "source": body.answer_key_source,
+    }
     values = {
+        "metadata_json": json.dumps(metadata),
         "correct_option": body.correct_option,
         "answer_key_source": body.answer_key_source,
         "explanation": body.explanation,
@@ -475,7 +491,10 @@ def review(
         ReviewAudit(
             question_id=question_id,
             reviewer_id=user.id,
-            changes_json=json.dumps(values),
+            changes_json=json.dumps(
+                {k: v for k, v in values.items() if k != "metadata_json"}
+                | {"accepted_options": body.accepted_options}
+            ),
         )
     )
     db.commit()
@@ -514,6 +533,11 @@ def question_image(image_path: str, user=Depends(current_user)):
     ):
         raise HTTPException(404, "Image not found")
     return FileResponse(target, media_type="image/png")
+
+
+@app.get("/api/admin/answer-key-coverage")
+def answer_key_coverage(user=Depends(admin_user)):
+    return json.loads((DATA_DIR / "answer_keys/neet/coverage_report.json").read_text())
 
 
 DIST = ROOT / "frontend" / "dist"
