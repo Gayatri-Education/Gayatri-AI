@@ -8,13 +8,24 @@ venv/
 env/
 ENV/
 .venv/
-
 # Local backups and exports
 exports/
 *.local-backup
-
 # IDE and OS files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+frontend/dist/
+var/
+*.db
+*.db-shm
+*.db-wal
+*.log
+frontend/test-results/
+frontend/playwright-report/

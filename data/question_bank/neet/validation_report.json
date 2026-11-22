@@ -1,0 +1,32 @@
+{
+  "schema": [
+    "question",
+    "subjects",
+    "difficulty",
+    "option_a",
+    "option_b",
+    "option_c",
+    "option_d",
+    "year"
+  ],
+  "question_records": 2240,
+  "unique_question_ids": 2240,
+  "valid_mapped_images": 2240,
+  "all_image_references_valid": true,
+  "all_csv_fields_populated": true,
+  "counts_by_year": {
+    "2015": 180,
+    "2016": 180,
+    "2017": 180,
+    "2018": 180,
+    "2019": 180,
+    "2020": 180,
+    "2021": 200,
+    "2022": 200,
+    "2023": 200,
+    "2024": 200,
+    "2025": 180,
+    "2026": 180
+  },
+  "csv_round_trip_checked": true
+}
