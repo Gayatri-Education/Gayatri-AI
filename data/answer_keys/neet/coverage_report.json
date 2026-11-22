@@ -1,0 +1,74 @@
+{
+  "question_count": 2240,
+  "counts_by_status": {
+    "mapping_required": 889,
+    "sourced_candidate": 947,
+    "no_source_match": 330,
+    "conflict": 74
+  },
+  "published_count": 0,
+  "by_year": {
+    "2015": {
+      "mapping_required": 79,
+      "sourced_candidate": 64,
+      "no_source_match": 37
+    },
+    "2016": {
+      "mapping_required": 64,
+      "sourced_candidate": 97,
+      "no_source_match": 19
+    },
+    "2017": {
+      "sourced_candidate": 36,
+      "no_source_match": 30,
+      "mapping_required": 114
+    },
+    "2018": {
+      "sourced_candidate": 143,
+      "mapping_required": 32,
+      "conflict": 4,
+      "no_source_match": 1
+    },
+    "2019": {
+      "sourced_candidate": 145,
+      "mapping_required": 32,
+      "no_source_match": 3
+    },
+    "2020": {
+      "mapping_required": 62,
+      "no_source_match": 18,
+      "sourced_candidate": 97,
+      "conflict": 3
+    },
+    "2021": {
+      "sourced_candidate": 66,
+      "no_source_match": 21,
+      "mapping_required": 113
+    },
+    "2022": {
+      "sourced_candidate": 91,
+      "mapping_required": 84,
+      "no_source_match": 25
+    },
+    "2023": {
+      "mapping_required": 86,
+      "sourced_candidate": 100,
+      "no_source_match": 14
+    },
+    "2024": {
+      "conflict": 67,
+      "sourced_candidate": 82,
+      "mapping_required": 50,
+      "no_source_match": 1
+    },
+    "2025": {
+      "mapping_required": 154,
+      "sourced_candidate": 26
+    },
+    "2026": {
+      "no_source_match": 161,
+      "mapping_required": 19
+    }
+  },
+  "policy": "Publicly sourced proposals only. No candidate bypasses answer-key/source-image review. Conflicts and unmapped options remain unresolved."
+}

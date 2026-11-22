@@ -1,0 +1,39 @@
+{
+  "question_count": 2240,
+  "counts_by_year": {
+    "2015": 180,
+    "2016": 180,
+    "2017": 180,
+    "2018": 180,
+    "2019": 180,
+    "2020": 180,
+    "2021": 200,
+    "2022": 200,
+    "2023": 200,
+    "2024": 200,
+    "2025": 180,
+    "2026": 180
+  },
+  "counts_by_subject": {
+    "Physics": 560,
+    "Chemistry": 560,
+    "Biology": 1120
+  },
+  "difficulty_estimates": {
+    "Easy": 1355,
+    "Moderate": 808,
+    "Hard": 77
+  },
+  "reference_images": 2240,
+  "diagram_context_images": 627,
+  "review_records": 633,
+  "flags": {
+    "low_ocr_confidence": 181,
+    "option_text_in_image_or_not_recognized": 219,
+    "option_labels_require_review": 150,
+    "faint_source_print": 1,
+    "formula_layout_check": 383,
+    "duplicate_printed_number_in_source": 2
+  },
+  "option_fields_using_images": 483
+}

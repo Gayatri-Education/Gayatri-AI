@@ -1,0 +1,4 @@
+# Optional: deterministic offline matching and PDF/OCR source reproduction.
+-r requirements.txt
+rapidfuzz==3.13.0
+# Also install trusted system tools: pdftotext, pdftoppm, tesseract (English).
