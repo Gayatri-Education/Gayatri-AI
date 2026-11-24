@@ -65,14 +65,41 @@ python main.py
 
 > 💡 **Windows Quick Start:** You can also launch Gayatri AI by double-clicking `run_gayatri_ai.bat`.
 
+---
+
+## 🐳 Docker & Cloud Deployment
+
+Gayatri AI includes full containerization and cloud port binding support for seamless deployment to Docker and container cloud platforms (such as Railway, Render, Fly.io, GCP Cloud Run, or AWS ECS).
+
+### 1. Build Docker Image
+
+```bash
+docker build -t gayatri-ai .
+```
+
+### 2. Run Container Locally
+
+```bash
+docker run -d -p 8080:8080 -e PORT=8080 --name gayatri-ai-container gayatri-ai
+```
+
+Access the web interface at `http://localhost:8080`.
+
+### 3. Cloud Dynamic Port Binding
+
+The application automatically reads the `PORT` environment variable provided by container platforms, binding to `0.0.0.0:${PORT:-8080}` and running in web mode (`ft.AppView.WEB_BROWSER`).
+
+---
 
 ## 📁 Project Structure
 
 ```
 Gayatri-AI/
+├── Dockerfile           # Production container build definition
+├── .dockerignore        # Build artifact and cache exclusion rules
 ├── main.py              # App entrypoint — UI orchestration and event routing
 ├── agent.py             # Autonomous Agent Mode (goal decomposition & tool dispatching)
-├── config.py            # App-wide configuration, search parameters, and theme tokens
+├── config.py            # App-wide configuration, server host/port, and theme tokens
 ├── ui_components.py     # Reusable Flet widgets, Memory Vault modal, and theme styling
 ├── llm_client.py        # LM Studio API client with streaming and fallback support
 ├── search_engine.py     # Web search, URL crawler, and hybrid relevance ranker

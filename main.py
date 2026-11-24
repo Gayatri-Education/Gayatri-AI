@@ -883,4 +883,12 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    host = getattr(config, "SERVER_HOST", os.getenv("HOST", "0.0.0.0"))
+    port_env = os.getenv("PORT")
+    web_mode = getattr(config, "WEB_MODE", False)
+
+    if port_env or web_mode:
+        port = int(port_env) if port_env else getattr(config, "SERVER_PORT", 8080)
+        ft.app(target=main, host=host, port=port, view=ft.AppView.WEB_BROWSER)
+    else:
+        ft.app(target=main)

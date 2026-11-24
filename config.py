@@ -173,3 +173,10 @@ SIDEBAR_WIDTH = 280                  # px, per layout spec
 ENABLE_AUTOSAVE = True
 ENABLE_STREAMING = True
 ENABLE_URL_DIRECT_CRAWL = True
+
+# ---------------------------------------------------------------------------
+# Server & Cloud Deployment Configuration
+# ---------------------------------------------------------------------------
+SERVER_HOST = os.getenv("HOST", "0.0.0.0")
+SERVER_PORT = int(os.getenv("PORT", "8080"))
+WEB_MODE = bool(os.getenv("PORT") or os.getenv("WEB_MODE", "").lower() in ("true", "1"))
